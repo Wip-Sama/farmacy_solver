@@ -141,11 +141,7 @@ def main():
     domain_file = os.path.join("asp", "domain.asp")
     guess_file = os.path.join("asp", f"guess_{args.base}.asp")
     constraints_file = os.path.join("asp", "constraints.asp")
-    
-    if args.base == 'choice':
-        opt_file = os.path.join("asp", "optimizations_choice", f"{args.opt}.asp")
-    else:
-        opt_file = os.path.join("asp", "optimizations_or", f"{args.opt}.asp")
+    opt_file = os.path.join("asp", "optimizations", f"{args.opt}.asp")
 
     for f in [domain_file, guess_file, constraints_file, opt_file]:
         if not os.path.exists(f):
