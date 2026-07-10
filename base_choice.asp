@@ -14,14 +14,15 @@ estate(24..36).
 % estate(24..36).
 
 % Fatto che definisce quante farmacie turnano ogni settimana
-max_farmacie_settimana(2).
+min_farmacie_settimana(2).
+max_farmacie_settimana(4).
 
 % -----------------------------------------
 % 2. GENERAZIONE DELLE SOLUZIONI (Choice Rule)
 % -----------------------------------------
 % Per ogni settimana, scegliamo ESATTAMENTE 'L' farmacie (potatura alla radice dello spazio di ricerca).
 % Questo sostituisce "turno | no_turno" e rende inutili i vincoli sul conteggio totale settimanale.
-L { turno(S, F) : farmacia(F) } L :- settimana(S), max_farmacie_settimana(L).
+M { turno(S, F) : farmacia(F) } L :- settimana(S), min_farmacie_settimana(M), max_farmacie_settimana(L).
 
 % -----------------------------------------
 % 3. VINCOLI (Hard Constraints - Check)

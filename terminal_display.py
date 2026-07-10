@@ -1,6 +1,7 @@
 import sys
 import argparse
 import re
+import csv
 from collections import defaultdict
 
 def parse_arguments():
@@ -71,6 +72,20 @@ def print_weekly_schedule(schedule):
         formatted_farmacie = [f"F{f} ({get_zona(f)})" for f in sorted(farmacie)]
         print(f"Wk {week:<7} | {', '.join(formatted_farmacie)}")
     print("-" * 50)
+
+def generate_csv_report(schedule, filename):
+    """Genera un report CSV della turnazione."""
+    try:
+        with open(filename, mode='w', newline='', encoding='utf-8') as file:
+            writer = csv.writer(file)
+            writer.writerow(['Settimana', 'Farmacia', 'Zona'])
+            for week in sorted(schedule.keys()):
+                for f_id in sorted(schedule[week]):
+                    writer.writerow([week, f"F{f_id}", get_zona(f_id)])
+        print(f"Report CSV generato con successo in: {filename}")
+    except Exception as e:
+        print(f"Errore durante la generazione del report CSV: {e}")
+
 
 
 def print_shift_statistics(schedule):
