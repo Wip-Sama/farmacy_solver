@@ -9,14 +9,14 @@ from terminal_display import parse_schedule, print_weekly_schedule, print_shift_
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def run_external_solver(executable, base_file, opt_file, live=False, time_limit=None):
-    logging.info(f"Running {executable.upper()} solver with files: {base_file}, {opt_file}")
+def run_external_solver(executable, domain_file, guess_file, constraints_file, opt_file, live=False, time_limit=None):
+    logging.info(f"Running {executable.upper()} solver with files: {domain_file}, {guess_file}, {constraints_file}, {opt_file}")
     if live:
         logging.warning(f"Live printing is currently fully supported only with --clingo. {executable.upper()} will process normally.")
         
     try:
         process = subprocess.Popen(
-            [executable, base_file, opt_file],
+            [executable, domain_file, guess_file, constraints_file, opt_file],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True
@@ -40,8 +40,8 @@ def run_external_solver(executable, base_file, opt_file, live=False, time_limit=
         logging.error(f"{executable.upper()} executable not found. Please ensure it is installed and in your PATH.")
         sys.exit(1)
 
-def run_clingo(base_file, opt_file, live=False, time_limit=None):
-    logging.info(f"Running Clingo solver via Python API with files: {base_file}, {opt_file}")
+def run_clingo(domain_file, guess_file, constraints_file, opt_file, live=False, time_limit=None):
+    logging.info(f"Running Clingo solver via Python API with files: {domain_file}, {guess_file}, {constraints_file}, {opt_file}")
     try:
         import clingo
     except ImportError:
@@ -49,7 +49,9 @@ def run_clingo(base_file, opt_file, live=False, time_limit=None):
         sys.exit(1)
 
     ctl = clingo.Control()
-    ctl.load(base_file)
+    ctl.load(domain_file)
+    ctl.load(guess_file)
+    ctl.load(constraints_file)
     ctl.load(opt_file)
     logging.info("Grounding...")
     ctl.ground([("base", [])])
@@ -80,7 +82,12 @@ def run_clingo(base_file, opt_file, live=False, time_limit=None):
     with ctl.solve(on_model=on_model, async_=True) as handle:
         try:
             if time_limit is not None:
-                finished = handle.wait(time_limit)
+                end_time = time.time() + time_limit
+                finished = False
+                while time.time() < end_time:
+                    if handle.wait(1.0):
+                        finished = True
+                        break
                 if not finished:
                     logging.warning(f"Time limit of {time_limit}s reached. Cancelling solver...")
                     handle.cancel()
@@ -123,7 +130,7 @@ def main():
     solver_group = parser.add_mutually_exclusive_group()
     solver_group.add_argument('--dlv', action='store_true', help="Use DLV solver.")
     solver_group.add_argument('--dlv2', action='store_true', help="Use DLV2 solver.")
-    solver_group.add_argument('--clingo', action='store_true', default=True, help="Use Clingo solver via Python API.")
+    solver_group.add_argument('--clingo', action='store_true', help="Use Clingo solver via Python API.")
 
     args = parser.parse_args()
 
@@ -131,30 +138,28 @@ def main():
     if not args.dlv and not args.dlv2 and not args.clingo:
         args.clingo = True
 
-    base_file = f"base_{args.base}.asp"
+    domain_file = os.path.join("asp", "domain.asp")
+    guess_file = os.path.join("asp", f"guess_{args.base}.asp")
+    constraints_file = os.path.join("asp", "constraints.asp")
     
-    # Keep the logic for opt_file depending on clingo vs others if needed.
-    if args.clingo:
-        opt_file = os.path.join("optimizations_choice", f"{args.opt}.asp")
+    if args.base == 'choice':
+        opt_file = os.path.join("asp", "optimizations_choice", f"{args.opt}.asp")
     else:
-        opt_file = os.path.join("optimizations_or", f"{args.opt}.asp")
+        opt_file = os.path.join("asp", "optimizations_or", f"{args.opt}.asp")
 
-    if not os.path.exists(base_file):
-        logging.error(f"Base file '{base_file}' not found.")
-        sys.exit(1)
-        
-    if not os.path.exists(opt_file):
-        logging.error(f"Optimization file '{opt_file}' not found.")
-        sys.exit(1)
+    for f in [domain_file, guess_file, constraints_file, opt_file]:
+        if not os.path.exists(f):
+            logging.error(f"File '{f}' not found.")
+            sys.exit(1)
 
     # Run the selected solver
     start_time = time.time()
     if args.clingo:
-        asp_output = run_clingo(base_file, opt_file, live=args.live, time_limit=args.time_limit)
+        asp_output = run_clingo(domain_file, guess_file, constraints_file, opt_file, live=args.live, time_limit=args.time_limit)
     elif args.dlv2:
-        asp_output = run_external_solver('dlv2', base_file, opt_file, live=args.live, time_limit=args.time_limit)
+        asp_output = run_external_solver('dlv2', domain_file, guess_file, constraints_file, opt_file, live=args.live, time_limit=args.time_limit)
     else:
-        asp_output = run_external_solver('dlv', base_file, opt_file, live=args.live, time_limit=args.time_limit)
+        asp_output = run_external_solver('dlv', domain_file, guess_file, constraints_file, opt_file, live=args.live, time_limit=args.time_limit)
     elapsed_time = time.time() - start_time
 
     if not asp_output or not asp_output.strip():

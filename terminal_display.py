@@ -3,6 +3,12 @@ import argparse
 import re
 import csv
 from collections import defaultdict
+from datetime import datetime, timedelta
+
+def get_week_date(week_number, start_date_str="2025-01-06"):
+    start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+    current_date = start_date + timedelta(weeks=week_number - 1)
+    return current_date.strftime("%Y-%m-%d")
 
 def parse_arguments():
     """Gestisce gli argomenti passati da riga di comando (argv)."""
@@ -63,15 +69,17 @@ def get_zona(f_id):
 
 def print_weekly_schedule(schedule):
     """Stampa la tabella del calendario settimanale."""
-    print("-" * 50)
-    print(f"\n{'Settimana':<10} | {'Farmacie di Turno'}")
-    print("-" * 50)
+    print("-" * 75)
+    print(f"\n{'Settimana':<22} | {'Farmacie di Turno'}")
+    print("-" * 75)
 
     for week in sorted(schedule.keys()):
         farmacie = schedule[week]
         formatted_farmacie = [f"F{f} ({get_zona(f)})" for f in sorted(farmacie)]
-        print(f"Wk {week:<7} | {', '.join(formatted_farmacie)}")
-    print("-" * 50)
+        date_str = get_week_date(week)
+        week_display = f"Wk {week:<2} ({date_str})"
+        print(f"{week_display:<22} | {', '.join(formatted_farmacie)}")
+    print("-" * 75)
 
 def generate_csv_report(schedule, filename, run_info=None):
     """Genera un report CSV della turnazione."""
@@ -79,12 +87,13 @@ def generate_csv_report(schedule, filename, run_info=None):
         with open(filename, mode='w', newline='', encoding='utf-8') as file:
             writer = csv.writer(file)
             
-            # Intestazione: Settimana, F1, F2, ..., F10
-            header = ['Settimana'] + [f"F{i}" for i in range(1, 11)]
+            # Intestazione: Settimana, Data, F1, F2, ..., F10
+            header = ['Settimana', 'Data'] + [f"F{i}" for i in range(1, 11)]
             writer.writerow(header)
             
             for week in sorted(schedule.keys()):
-                row = [week]
+                date_str = get_week_date(week)
+                row = [week, date_str]
                 farmacie_di_turno = set(schedule[week])
                 for i in range(1, 11):
                     row.append(1 if i in farmacie_di_turno else "")
