@@ -173,7 +173,13 @@ def main():
     print(f"\nComputation time: {elapsed_time:.2f} seconds")
 
     if args.csv:
-        generate_csv_report(schedule, args.csv)
+        run_info = {
+            'solver': 'clingo' if args.clingo else ('dlv2' if args.dlv2 else 'dlv'),
+            'base': args.base,
+            'opt': args.opt,
+            'time': elapsed_time
+        }
+        generate_csv_report(schedule, args.csv, run_info)
 
 if __name__ == "__main__":
     main()

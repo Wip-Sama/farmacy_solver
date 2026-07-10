@@ -73,15 +73,31 @@ def print_weekly_schedule(schedule):
         print(f"Wk {week:<7} | {', '.join(formatted_farmacie)}")
     print("-" * 50)
 
-def generate_csv_report(schedule, filename):
+def generate_csv_report(schedule, filename, run_info=None):
     """Genera un report CSV della turnazione."""
     try:
         with open(filename, mode='w', newline='', encoding='utf-8') as file:
             writer = csv.writer(file)
-            writer.writerow(['Settimana', 'Farmacia', 'Zona'])
+            
+            # Intestazione: Settimana, F1, F2, ..., F10
+            header = ['Settimana'] + [f"F{i}" for i in range(1, 11)]
+            writer.writerow(header)
+            
             for week in sorted(schedule.keys()):
-                for f_id in sorted(schedule[week]):
-                    writer.writerow([week, f"F{f_id}", get_zona(f_id)])
+                row = [week]
+                farmacie_di_turno = set(schedule[week])
+                for i in range(1, 11):
+                    row.append(1 if i in farmacie_di_turno else "")
+                writer.writerow(row)
+                
+            if run_info:
+                writer.writerow([])
+                writer.writerow(['--- Run Info ---'])
+                writer.writerow(['Solver', run_info.get('solver', 'N/A')])
+                writer.writerow(['Base', run_info.get('base', 'N/A')])
+                writer.writerow(['Optimization', run_info.get('opt', 'N/A')])
+                writer.writerow(['Computation Time (s)', f"{run_info.get('time', 0):.2f}"])
+                
         print(f"Report CSV generato con successo in: {filename}")
     except Exception as e:
         print(f"Errore durante la generazione del report CSV: {e}")
