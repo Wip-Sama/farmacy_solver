@@ -1,5 +1,5 @@
 % -----------------------------------------
-% 3. VINCOLI (Hard Constraints - Check)
+% 3. VINCOLI (Strong Constraints - Check)
 % -----------------------------------------
 
 % Criterio 1: ogni settimana deve avere almeno 2 farmacie

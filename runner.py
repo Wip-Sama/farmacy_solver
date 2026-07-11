@@ -112,10 +112,17 @@ def run_clingo(domain_file, guess_file, constraints_file, opt_file, live=False, 
     return output
 
 def main():
+    optimizations = opt_file = os.path.join("asp", "optimizations")
+    if not os.path.exists(optimizations):
+        logging.error(f"Optimizations directory '{optimizations}' not found.")
+        sys.exit(1)
+    else:
+        optimizations_list = [f[:-4] for f in os.listdir(optimizations) if f.endswith('.lp')]
+    
     parser = argparse.ArgumentParser(description="Python runner for ASP pharmacy scheduling.")
     parser.add_argument('--base', choices=['choice', 'or'], default='choice',
                         help="The base encoding to use (default: choice).")
-    parser.add_argument('--opt', choices=['differenza_turni', 'differenza_turni_con_penalita', 'penalita_esponenziale'],
+    parser.add_argument('--opt', choices=optimizations_list,
                         default='penalita_esponenziale',
                         help="The optimization strategy to use (default: penalita_esponenziale).")
     
@@ -138,10 +145,10 @@ def main():
     if not args.dlv and not args.dlv2 and not args.clingo:
         args.clingo = True
 
-    domain_file = os.path.join("asp", "domain.asp")
-    guess_file = os.path.join("asp", f"guess_{args.base}.asp")
-    constraints_file = os.path.join("asp", "constraints.asp")
-    opt_file = os.path.join("asp", "optimizations", f"{args.opt}.asp")
+    domain_file = os.path.join("asp", "domain.lp")
+    guess_file = os.path.join("asp", f"guess_{args.base}.lp")
+    constraints_file = os.path.join("asp", "constraints.lp")
+    opt_file = os.path.join("asp", "optimizations", f"{args.opt}.lp")
 
     for f in [domain_file, guess_file, constraints_file, opt_file]:
         if not os.path.exists(f):
