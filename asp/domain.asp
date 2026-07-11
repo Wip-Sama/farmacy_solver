@@ -11,7 +11,9 @@ zona(1..6, centro).
 zona(7..10, marina).
 
 % Definizione del periodo estivo e festivi
-estate(24..36).
+estate(25..37).
+inverno(38..52).
+inverno(1..25).
 festivo(1).
 festivo(15).
 festivo(16).
