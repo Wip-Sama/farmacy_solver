@@ -6,6 +6,7 @@ import os
 import time
 import csv
 import tempfile
+from datetime import date
 from terminal_display import parse_schedule, print_weekly_schedule, print_shift_statistics, print_optimization_cost, generate_csv_report
 
 # Configure logging
@@ -117,7 +118,7 @@ def run_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic_file
         
     return output
 
-def generate_dynamic_constraints(reschedule_csv, reschedule_from, unavailables, unavailable_intervals):
+def generate_dynamic_constraints(reschedule_csv, reschedule_from, unavailables, unavailable_intervals, start_week, end_week):
     """
     Generates a temporary ASP file containing dynamic constraints for rescheduling.
     
@@ -142,7 +143,10 @@ def generate_dynamic_constraints(reschedule_csv, reschedule_from, unavailables, 
     """
     lines = []
     
+    actual_start_week = start_week
+    
     if reschedule_csv and reschedule_from:
+        actual_start_week = 1
         lines.append(f"reschedule_from({reschedule_from}).\n")
         try:
             with open(reschedule_csv, mode='r', encoding='utf-8') as file:
@@ -187,7 +191,12 @@ def generate_dynamic_constraints(reschedule_csv, reschedule_from, unavailables, 
                 sys.exit(1)
                 
     if not lines:
-        return None
+        # We always need the settimana fact!
+        lines.append(f"settimana({actual_start_week}..{end_week}).\n")
+        
+    else:
+        # Prepend the settimana fact to ensure it's loaded
+        lines.insert(0, f"settimana({actual_start_week}..{end_week}).\n")
         
     fd, path = tempfile.mkstemp(suffix=".lp", text=True)
     with os.fdopen(fd, 'w') as f:
@@ -225,6 +234,13 @@ def main():
     parser.add_argument('--unavailable-interval', type=str, nargs='+', metavar='F,W1,W2',
                         help="List of intervals where pharmacies are unavailable (e.g., 3,15,18).")
     
+    parser.add_argument('--year', type=int, default=2025,
+                        help="L'anno per cui si vuole generare il calendario (default: 2025).")
+    parser.add_argument('--start-week', type=int, default=1,
+                        help="Settimana di inizio per la schedulazione (default: 1).")
+    parser.add_argument('--end-week', type=int, default=None,
+                        help="Settimana di fine per la schedulazione (default: ultima settimana dell'anno).")
+    
     # Mutually exclusive group for solver selection
     solver_group = parser.add_mutually_exclusive_group()
     solver_group.add_argument('--dlv', action='store_true', help="Use DLV solver.")
@@ -257,11 +273,24 @@ def main():
     if args.reschedule_from and not args.reschedule_csv:
         parser.error("--reschedule-from requires --reschedule-csv")
 
+    total_weeks = date(args.year, 12, 28).isocalendar()[1]
+    
+    end_week = args.end_week if args.end_week is not None else total_weeks
+    
+    if args.start_week > total_weeks:
+        logging.error(f"Error: --start-week {args.start_week} is greater than the total number of weeks in year {args.year} ({total_weeks}).")
+        sys.exit(1)
+        
+    if args.start_week > end_week:
+        logging.error(f"Error: --start-week {args.start_week} cannot be greater than --end-week {end_week}.")
+        sys.exit(1)
+
     dynamic_file = None
     try:
         dynamic_file = generate_dynamic_constraints(
             args.reschedule_csv, args.reschedule_from, 
-            args.unavailable, args.unavailable_interval
+            args.unavailable, args.unavailable_interval,
+            args.start_week, end_week
         )
 
         # Run the selected solver
@@ -287,7 +316,7 @@ def main():
         logging.error("No schedule could be parsed from the output.")
         sys.exit(1)
 
-    print_weekly_schedule(schedule)
+    print_weekly_schedule(schedule, args.year)
     print_shift_statistics(schedule)
     print_optimization_cost(asp_output)
     print(f"\nComputation time: {elapsed_time:.2f} seconds")
@@ -301,7 +330,7 @@ def main():
         }
         if os.path.dirname(args.csv):
             os.makedirs(os.path.dirname(args.csv), exist_ok=True)
-        generate_csv_report(schedule, args.csv, run_info)
+        generate_csv_report(schedule, args.csv, run_info, args.year)
 
 if __name__ == "__main__":
     main()

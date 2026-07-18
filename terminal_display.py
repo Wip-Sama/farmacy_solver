@@ -5,9 +5,11 @@ import csv
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-def get_week_date(week_number, start_date_str="2025-01-06"):
-    start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-    current_date = start_date + timedelta(weeks=week_number - 1)
+def get_week_date(week_number, year=2025):
+    d = datetime(year, 1, 1)
+    if d.weekday() != 0:
+        d += timedelta(days=(7 - d.weekday()))
+    current_date = d + timedelta(weeks=week_number - 1)
     return current_date.strftime("%Y-%m-%d")
 
 def parse_arguments():
@@ -23,6 +25,11 @@ def parse_arguments():
         type=argparse.FileType('r', encoding='utf-8'), 
         default=sys.stdin,
         help="Il file di output generato da DLV/Clingo.\nSe omesso, lo script leggerà automaticamente da standard input (pipe)."
+    )
+    
+    parser.add_argument(
+        '--year', type=int, default=2025,
+        help="L'anno per cui si vuole generare il calendario (default: 2025)."
     )
     
     return parser.parse_args()
@@ -67,7 +74,7 @@ def get_zona(f_id):
     return "Centro" if 1 <= f_id <= 6 else "Marina"
 
 
-def print_weekly_schedule(schedule):
+def print_weekly_schedule(schedule, year=2025):
     """Stampa la tabella del calendario settimanale."""
     print("-" * 75)
     print(f"\n{'Settimana':<22} | {'Farmacie di Turno'}")
@@ -76,12 +83,12 @@ def print_weekly_schedule(schedule):
     for week in sorted(schedule.keys()):
         farmacie = schedule[week]
         formatted_farmacie = [f"F{f} ({get_zona(f)})" for f in sorted(farmacie)]
-        date_str = get_week_date(week)
+        date_str = get_week_date(week, year)
         week_display = f"Wk {week:<2} ({date_str})"
         print(f"{week_display:<22} | {', '.join(formatted_farmacie)}")
     print("-" * 75)
 
-def generate_csv_report(schedule, filename, run_info=None):
+def generate_csv_report(schedule, filename, run_info=None, year=2025):
     """Genera un report CSV della turnazione."""
     try:
         with open(filename, mode='w', newline='', encoding='utf-8') as file:
@@ -92,7 +99,7 @@ def generate_csv_report(schedule, filename, run_info=None):
             writer.writerow(header)
             
             for week in sorted(schedule.keys()):
-                date_str = get_week_date(week)
+                date_str = get_week_date(week, year)
                 row = [week, date_str]
                 farmacie_di_turno = set(schedule[week])
                 for i in range(1, 11):
@@ -156,7 +163,7 @@ def main():
         return
 
     # 4. Visualizzazione a schermo
-    print_weekly_schedule(schedule)
+    print_weekly_schedule(schedule, args.year)
     print_shift_statistics(schedule)
     print_optimization_cost(asp_output)
 

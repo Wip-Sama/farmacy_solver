@@ -38,6 +38,9 @@ python runner.py --time 60
 | `--dlv`                               | DLV solver                      |
 | `--dlv2`                              | DLV2 solver                     |
 | `--clingo`                            | Clingo solver                   |
+| `--year`                              | Target year                     |
+| `--start-week`                        | Start scheduling from week      |
+| `--end-week`                          | End scheduling at week          |
 
 ### CSV Report
 
@@ -53,6 +56,36 @@ Print live the latest found solution as it is discovered:
 
 ```shell
 python runner.py --live
+```
+
+### Rescheduling & Constraints
+
+You can reschedule shifts while keeping historical assignments fixed, and specify custom constraints for pharmacies:
+
+```shell
+# Reschedule from week 20, keeping weeks 1-19 fixed exactly as they are in original.csv
+python runner.py --reschedule-csv original.csv --reschedule-from 20
+
+# Force Farmacia 1 to be unavailable in week 22
+python runner.py --unavailable 1,22
+
+# Force Farmacia 3 to be unavailable from week 22 to 28
+python runner.py --unavailable-interval 3,22,28
+
+# Combine all of them
+python runner.py --reschedule-csv original.csv --reschedule-from 20 --unavailable 1,22 --unavailable-interval 3,22,28
+```
+
+### Partial Year & Year-specific Scheduling
+
+You can target a specific year for accurate dates (and automatic 53-week handling) or schedule only a partial slice of the year by ignoring previous unrequested weeks entirely:
+
+```shell
+# Schedule only weeks 50 through 52 for the default year
+python runner.py --start-week 50
+
+# Schedule only weeks 20 to 30 for the year 2026
+python runner.py --year 2026 --start-week 20 --end-week 30
 ```
 
 ### Examples

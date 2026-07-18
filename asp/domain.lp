@@ -2,8 +2,8 @@
 % 1. DEFINIZIONE DEL DOMINIO E DEI FATTI
 % -----------------------------------------
 
-% Un anno è composto da 52 settimane
-settimana(1..52).
+% Un anno è composto da 52 o 53 settimane (verrà generato dinamicamente)
+% settimana(1..52).
 
 % Le farmacie da far turnare sono 10, di cui 6 ubicate in zona centro e 4 in zona marina
 farmacia(1..10).
