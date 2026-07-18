@@ -1,3 +1,5 @@
 clingo
 openpyxl
 pandas
+typer
+rich
