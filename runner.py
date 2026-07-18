@@ -4,19 +4,24 @@ import logging
 import sys
 import os
 import time
+import csv
+import tempfile
 from terminal_display import parse_schedule, print_weekly_schedule, print_shift_statistics, print_optimization_cost, generate_csv_report
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def run_external_solver(executable, domain_file, guess_file, constraints_file, opt_file, live=False, time_limit=None):
-    logging.info(f"Running {executable.upper()} solver with files: {domain_file}, {guess_file}, {constraints_file}, {opt_file}")
+def run_external_solver(executable, domain_file, guess_file, constraints_file, opt_file, dynamic_file=None, live=False, time_limit=None):
+    files = [domain_file, guess_file, constraints_file, opt_file]
+    if dynamic_file:
+        files.append(dynamic_file)
+    logging.info(f"Running {executable.upper()} solver with files: {', '.join(files)}")
     if live:
         logging.warning(f"Live printing is currently fully supported only with --clingo. {executable.upper()} will process normally.")
         
     try:
         process = subprocess.Popen(
-            [executable, domain_file, guess_file, constraints_file, opt_file],
+            [executable] + files,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True
@@ -40,8 +45,11 @@ def run_external_solver(executable, domain_file, guess_file, constraints_file, o
         logging.error(f"{executable.upper()} executable not found. Please ensure it is installed and in your PATH.")
         sys.exit(1)
 
-def run_clingo(domain_file, guess_file, constraints_file, opt_file, live=False, time_limit=None):
-    logging.info(f"Running Clingo solver via Python API with files: {domain_file}, {guess_file}, {constraints_file}, {opt_file}")
+def run_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic_file=None, live=False, time_limit=None):
+    files = [domain_file, guess_file, constraints_file, opt_file]
+    if dynamic_file:
+        files.append(dynamic_file)
+    logging.info(f"Running Clingo solver via Python API with files: {', '.join(files)}")
     try:
         import clingo
     except ImportError:
@@ -49,10 +57,8 @@ def run_clingo(domain_file, guess_file, constraints_file, opt_file, live=False, 
         sys.exit(1)
 
     ctl = clingo.Control()
-    ctl.load(domain_file)
-    ctl.load(guess_file)
-    ctl.load(constraints_file)
-    ctl.load(opt_file)
+    for f in files:
+        ctl.load(f)
     logging.info("Grounding...")
     ctl.ground([("base", [])])
     
@@ -111,6 +117,83 @@ def run_clingo(domain_file, guess_file, constraints_file, opt_file, live=False, 
         
     return output
 
+def generate_dynamic_constraints(reschedule_csv, reschedule_from, unavailables, unavailable_intervals):
+    """
+    Generates a temporary ASP file containing dynamic constraints for rescheduling.
+    
+    Example generated rules:
+    ```asp
+    % When reading from previous CSV with --reschedule-from 20
+    reschedule_from(20).
+    past_turno(1, 1).
+    past_turno(1, 3).
+    % ...
+    % Lock past weeks
+    :- past_turno(S, F), not turno(S, F).
+    :- turno(S, F), S < START_WEEK, not past_turno(S, F), reschedule_from(START_WEEK).
+
+    % From --unavailable 1,22
+    :- turno(22, 1).
+
+    % From --unavailable-interval 3,25,28
+    :- turno(S, 3), S >= 25, S <= 28.
+    ```
+    🥲 non vanno ne markdown ne wmoji in vscode nei commenti in vscode... piango
+    """
+    lines = []
+    
+    if reschedule_csv and reschedule_from:
+        lines.append(f"reschedule_from({reschedule_from}).\n")
+        try:
+            with open(reschedule_csv, mode='r', encoding='utf-8') as file:
+                reader = csv.reader(file)
+                headers = next(reader, None)
+                for row in reader:
+                    if not row or len(row) < 12:
+                        continue
+                    try:
+                        week = int(row[0])
+                        if week < reschedule_from:
+                            for i in range(1, 11):
+                                if row[i+1] == "1":
+                                    lines.append(f"past_turno({week}, {i}).\n")
+                    except ValueError:
+                        continue
+                        
+        except Exception as e:
+            logging.error(f"Failed to read CSV file {reschedule_csv}: {e}")
+            sys.exit(1)
+            
+        lines.append("% Lock past weeks\n")
+        lines.append(":- past_turno(S, F), not turno(S, F).\n")
+        lines.append(":- turno(S, F), S < START_WEEK, not past_turno(S, F), reschedule_from(START_WEEK).\n")
+        
+    if unavailables:
+        for u in unavailables:
+            try:
+                f, w = u.split(',')
+                lines.append(f":- turno({w}, {f}).\n")
+            except ValueError:
+                logging.error(f"Invalid format for --unavailable: {u}. Expected F,W")
+                sys.exit(1)
+                
+    if unavailable_intervals:
+        for u in unavailable_intervals:
+            try:
+                f, w1, w2 = u.split(',')
+                lines.append(f":- turno(S, {f}), S >= {w1}, S <= {w2}.\n")
+            except ValueError:
+                logging.error(f"Invalid format for --unavailable-interval: {u}. Expected F,W1,W2")
+                sys.exit(1)
+                
+    if not lines:
+        return None
+        
+    fd, path = tempfile.mkstemp(suffix=".lp", text=True)
+    with os.fdopen(fd, 'w') as f:
+        f.writelines(lines)
+    return path
+
 def main():
     optimizations = opt_file = os.path.join("asp", "optimizations")
     if not os.path.exists(optimizations):
@@ -133,6 +216,15 @@ def main():
     parser.add_argument('--csv', type=str, metavar='FILENAME',
                         help="Generate a CSV report of the schedule to the specified file.")
     
+    parser.add_argument('--reschedule-csv', type=str, metavar='FILENAME',
+                        help="Path to the CSV file of a previous run.")
+    parser.add_argument('--reschedule-from', type=int, metavar='WEEK',
+                        help="Week number from which to reschedule (past weeks will be fixed). Requires --reschedule-csv.")
+    parser.add_argument('--unavailable', type=str, nargs='+', metavar='F,W',
+                        help="List of unavailable pharmacies in specific weeks (e.g., 3,15 4,16).")
+    parser.add_argument('--unavailable-interval', type=str, nargs='+', metavar='F,W1,W2',
+                        help="List of intervals where pharmacies are unavailable (e.g., 3,15,18).")
+    
     # Mutually exclusive group for solver selection
     solver_group = parser.add_mutually_exclusive_group()
     solver_group.add_argument('--dlv', action='store_true', help="Use DLV solver.")
@@ -140,6 +232,13 @@ def main():
     solver_group.add_argument('--clingo', action='store_true', help="Use Clingo solver via Python API.")
 
     args = parser.parse_args()
+
+    # Automatically route CSV files to a dedicated 'schedules' folder if no path is specified
+    csv_dir = "schedules"
+    if args.csv and not os.path.dirname(args.csv):
+        args.csv = os.path.join(csv_dir, args.csv)
+    if args.reschedule_csv and not os.path.dirname(args.reschedule_csv):
+        args.reschedule_csv = os.path.join(csv_dir, args.reschedule_csv)
 
     # Default to clingo if no solver is specified
     if not args.dlv and not args.dlv2 and not args.clingo:
@@ -155,15 +254,28 @@ def main():
             logging.error(f"File '{f}' not found.")
             sys.exit(1)
 
-    # Run the selected solver
-    start_time = time.time()
-    if args.clingo:
-        asp_output = run_clingo(domain_file, guess_file, constraints_file, opt_file, live=args.live, time_limit=args.time_limit)
-    elif args.dlv2:
-        asp_output = run_external_solver('dlv2', domain_file, guess_file, constraints_file, opt_file, live=args.live, time_limit=args.time_limit)
-    else:
-        asp_output = run_external_solver('dlv', domain_file, guess_file, constraints_file, opt_file, live=args.live, time_limit=args.time_limit)
-    elapsed_time = time.time() - start_time
+    if args.reschedule_from and not args.reschedule_csv:
+        parser.error("--reschedule-from requires --reschedule-csv")
+
+    dynamic_file = None
+    try:
+        dynamic_file = generate_dynamic_constraints(
+            args.reschedule_csv, args.reschedule_from, 
+            args.unavailable, args.unavailable_interval
+        )
+
+        # Run the selected solver
+        start_time = time.time()
+        if args.clingo:
+            asp_output = run_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic_file=dynamic_file, live=args.live, time_limit=args.time_limit)
+        elif args.dlv2:
+            asp_output = run_external_solver('dlv2', domain_file, guess_file, constraints_file, opt_file, dynamic_file=dynamic_file, live=args.live, time_limit=args.time_limit)
+        else:
+            asp_output = run_external_solver('dlv', domain_file, guess_file, constraints_file, opt_file, dynamic_file=dynamic_file, live=args.live, time_limit=args.time_limit)
+        elapsed_time = time.time() - start_time
+    finally:
+        if dynamic_file and os.path.exists(dynamic_file):
+            os.remove(dynamic_file)
 
     if not asp_output or not asp_output.strip():
         logging.warning("Solver returned empty output. No schedule found.")
@@ -187,6 +299,8 @@ def main():
             'opt': args.opt,
             'time': elapsed_time
         }
+        if os.path.dirname(args.csv):
+            os.makedirs(os.path.dirname(args.csv), exist_ok=True)
         generate_csv_report(schedule, args.csv, run_info)
 
 if __name__ == "__main__":

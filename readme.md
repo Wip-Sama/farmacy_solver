@@ -20,25 +20,24 @@ python runner.py
 python runner.py --time 60
 ```
 
-
 ### Configurations
 
-| Base Encoding | Optimization Strategy | Solver |
-| --- | --- | --- |
+| Base Encoding      | Optimization Strategy             | Solver              |
+| ------------------ | --------------------------------- | ------------------- |
 | `choice` (default) | `penalita_esponenziale` (default) | DLV / DLV2 / Clingo |
 
 **Available Configurations:**
 
-| Option | Description |
-| --- | --- |
-| `--base choice` | Choice encoding (default) |
-| `--base or` | OR encoding |
-| `--opt penalita_esponenziale` | Penalità esponenziale (default) |
-| `--opt differenza_turni` | Differenza turni |
-| `--opt differenza_turni_con_penalita` | Differenza turni con penalità |
-| `--dlv` | DLV solver |
-| `--dlv2` | DLV2 solver |
-| `--clingo` | Clingo solver |
+| Option                                | Description                     |
+| ------------------------------------- | ------------------------------- |
+| `--base choice`                       | Choice encoding (default)       |
+| `--base or`                           | OR encoding                     |
+| `--opt penalita_esponenziale`         | Penalità esponenziale (default) |
+| `--opt differenza_turni`              | Differenza turni                |
+| `--opt differenza_turni_con_penalita` | Differenza turni con penalità   |
+| `--dlv`                               | DLV solver                      |
+| `--dlv2`                              | DLV2 solver                     |
+| `--clingo`                            | Clingo solver                   |
 
 ### CSV Report
 
@@ -59,26 +58,31 @@ python runner.py --live
 ### Examples
 
 **Solve with default configuration:**
+
 ```shell
 python runner.py --time 60
 ```
 
 **Use difference_turni_con_penalita optimization:**
+
 ```shell
 python runner.py --opt differenza_turni_con_penalita --time 60
 ```
 
 **Use DLV2 solver:**
+
 ```shell
 python runner.py --dlv2 --time 60
 ```
 
 **Generate CSV report with clingo solver:**
+
 ```shell
 python runner.py --clingo --csv report.csv
 ```
 
 **Combine multiple options:**
+
 ```shell
 python runner.py --base or --opt differenza_turni --dlv2 --time 120 --csv full_report.csv
 ```

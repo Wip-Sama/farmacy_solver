@@ -24,7 +24,6 @@ class TestRunner(unittest.TestCase):
             stderr=subprocess.PIPE,
             text=True
         )
-        # Should fail because --opt is required
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('the following arguments are required: --opt', result.stderr)
 
