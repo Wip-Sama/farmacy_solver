@@ -15,9 +15,11 @@ if sys.platform == "win32":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 import typer
-from rich.console import Console
+from rich.console import Console, Group
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
+from rich.text import Text
+from rich.live import Live
 from terminal_display import (
     parse_schedule, 
     get_zona,
@@ -32,6 +34,55 @@ class SolverType(str, Enum):
     clingo = "clingo"
     dlv = "dlv"
     dlv2 = "dlv2"
+
+def generate_output_tables(schedule, year, cost_value=None, elapsed_time=None, is_live=False):
+    renderables = []
+
+    ### Weekly Schedule Table
+    title = f"[bold yellow]LIVE: Calendario Settimanale ({year})[/bold yellow]" if is_live else f"Calendario Settimanale ({year})"
+    table = Table(title=title, show_header=True, header_style="bold blue")
+    table.add_column("Settimana", style="dim", width=22)
+    table.add_column("Farmacie di Turno", style="bold green")
+
+    for week in sorted(schedule.keys()):
+        farmacie = schedule[week]
+        formatted_farmacie = [f"F{f} ({get_zona(f)})" for f in sorted(farmacie)]
+        date_str = get_week_date(week, year)
+        week_display = f"Wk {week:<2} ({date_str})"
+        table.add_row(week_display, ", ".join(formatted_farmacie))
+        
+    renderables.append(table)
+
+    ### Shift Statistics Table
+    stat_table = Table(title="Statistiche Turni", show_header=True, header_style="bold magenta")
+    stat_table.add_column("Farmacia", justify="center")
+    stat_table.add_column("Turni Assegnati", justify="right")
+
+    total_shifts_counted = 0
+    for farmacia in range(1, 11): 
+        count = sum(farmacia in farmacie for farmacie in schedule.values())
+        total_shifts_counted += count
+        stat_table.add_row(f"F{farmacia}", str(count))
+        
+    renderables.append(stat_table)
+    
+    stats_text = f"[bold cyan]Totale complessivo turni assegnati:[/bold cyan] {total_shifts_counted}"
+    if len(schedule) > 0:
+        media = total_shifts_counted / len(schedule.keys())
+        stats_text += f"\n[bold cyan]Media farmacie per settimana:[/bold cyan] {media:.1f}"
+    
+    renderables.append(Text.from_markup(stats_text))
+
+    ### Optimization Cost
+    if cost_value is not None:
+        renderables.append(Text.from_markup(f"\n[bold magenta]Valore di Ottimizzazione (Penalità divario):[/bold magenta] {cost_value}"))
+    else:
+        renderables.append(Text.from_markup("\n[yellow]Nessun dato di ottimizzazione (COST) trovato nell'output.[/yellow]"))
+
+    if elapsed_time is not None:
+        renderables.append(Text.from_markup(f"\n[bold green]Computation time: {elapsed_time:.2f} seconds[/bold green]"))
+
+    return renderables
 
 def run_external_solver(executable, domain_file, guess_file, constraints_file, opt_file, dynamic_file=None, live=False, time_limit=None):
     files = [domain_file, guess_file, constraints_file, opt_file]
@@ -61,22 +112,22 @@ def run_external_solver(executable, domain_file, guess_file, constraints_file, o
         if process.returncode != 0 and process.returncode is not None:
             console.print(f"[red]{executable.upper()} execution failed: {stderr}[/red]")
             sys.exit(1)
-        return stdout
+        return stdout, None
     except subprocess.TimeoutExpired:
         console.print(f"[yellow]Time limit of {time_limit}s reached. Terminating {executable.upper()}...[/yellow]")
         process.terminate()
         stdout, _ = process.communicate()
-        return stdout
+        return stdout, None
     except KeyboardInterrupt:
         console.print(f"[yellow]Execution interrupted by user (Ctrl+C). Terminating {executable.upper()}...[/yellow]")
         process.terminate()
         stdout, _ = process.communicate()
-        return stdout
+        return stdout, None
     except FileNotFoundError:
         console.print(f"[red]{executable.upper()} executable not found. Please ensure it is installed and in your PATH.[/red]")
         sys.exit(1)
 
-def run_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic_file=None, live=False, time_limit=None):
+def run_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic_file=None, live=False, time_limit=None, year=2025):
     files = [domain_file, guess_file, constraints_file, opt_file]
     if dynamic_file:
         files.append(dynamic_file)
@@ -104,34 +155,33 @@ def run_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic_file
     models = []
     costs = []
 
-    with Progress(
+    progress = Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         transient=False,
-    ) as progress:
-        task_id = progress.add_task(description="[cyan]Solving...", total=None)
+    )
+    task_id = progress.add_task(description="[cyan]Solving...", total=None)
 
-        def on_model(m):
-            model_str = " ".join(str(sym) for sym in m.symbols(shown=True))
-            models.append(model_str)
-            if m.cost:
-                costs.append(m.cost)
+    def on_model(m):
+        model_str = " ".join(str(sym) for sym in m.symbols(shown=True))
+        models.append(model_str)
+        if m.cost:
+            costs.append(m.cost)
+        
+        cost_str = f" [magenta](Cost: {m.cost[0]})[/magenta]" if m.cost else ""
+        progress.update(task_id, description=f"[cyan]Solving... [green]Found solution #{len(models)}{cost_str}[/green]")
             
-            cost_str = f" [magenta](Cost: {m.cost[0]})[/magenta]" if m.cost else ""
-            progress.update(task_id, description=f"[cyan]Solving... [green]Found solution #{len(models)}{cost_str}[/green]")
-                
-            if live:
-                progress.console.print("\n[bold yellow]" + "="*50 + "[/bold yellow]")
-                progress.console.print("[bold yellow]LIVE SOLUTION UPDATE[/bold yellow]")
-                progress.console.print("[bold yellow]" + "="*50 + "[/bold yellow]")
-                # We can print a simple version here since it's just live update
-                schedule = parse_schedule(model_str)
-                for week in sorted(schedule.keys()):
-                    progress.console.print(f"Wk {week}: {', '.join([f'F{f}' for f in sorted(schedule[week])])}")
-                if m.cost:
-                    progress.console.print(f"[bold magenta]Current Optimization Value: {m.cost[0]}[/bold magenta]")
-                progress.console.print("[bold yellow]" + "="*50 + "\n[/bold yellow]")
+        if live:
+            schedule = parse_schedule(model_str)
+            cost_value = m.cost[0] if m.cost else None
+            renderables = generate_output_tables(schedule, year, cost_value=cost_value, is_live=True)
+            
+            # Update the live display with the new tables and the progress bar
+            if 'live_ctx' in locals() or 'live_ctx' in globals() or hasattr(on_model, 'live_ctx'):
+                on_model.live_ctx.update(Group(*renderables, progress))
 
+    with Live(Group(progress), console=console, refresh_per_second=15, transient=True) as live_ctx:
+        on_model.live_ctx = live_ctx
         with ctl.solve(on_model=on_model, async_=True) as handle:
             try:
                 if time_limit is not None:
@@ -160,7 +210,7 @@ def run_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic_file
         final_cost = costs[-1]
         output += f"COST {final_cost[0]}@1\n"
         
-    return output
+    return output, len(models)
 
 def generate_dynamic_constraints(reschedule_csv: Optional[str], reschedule_from: Optional[int], 
                                  unavailables: Optional[List[str]], unavailable_intervals: Optional[List[str]], 
@@ -285,11 +335,11 @@ def main(
 
         start_time = time.time()
         if solver == SolverType.clingo:
-            asp_output = run_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic_file=dynamic_file, live=live, time_limit=time_limit)
+            asp_output, num_solutions = run_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic_file=dynamic_file, live=live, time_limit=time_limit, year=year)
         elif solver == SolverType.dlv2:
-            asp_output = run_external_solver("dlv2", domain_file, guess_file, constraints_file, opt_file, dynamic_file=dynamic_file, live=live, time_limit=time_limit)
+            asp_output, num_solutions = run_external_solver("dlv2", domain_file, guess_file, constraints_file, opt_file, dynamic_file=dynamic_file, live=live, time_limit=time_limit)
         elif solver == SolverType.dlv:
-            asp_output = run_external_solver("dlv", domain_file, guess_file, constraints_file, opt_file, dynamic_file=dynamic_file, live=live, time_limit=time_limit)
+            asp_output, num_solutions = run_external_solver("dlv", domain_file, guess_file, constraints_file, opt_file, dynamic_file=dynamic_file, live=live, time_limit=time_limit)
 
         elapsed_time = time.time() - start_time
 
@@ -299,48 +349,17 @@ def main(
             console.print("[red]No schedule could be parsed from the output.[/red]")
             raise typer.Exit(code=1)
 
-        # 1. Print Weekly Schedule Table
-        table = Table(title=f"Calendario Settimanale ({year})", show_header=True, header_style="bold blue")
-        table.add_column("Settimana", style="dim", width=22)
-        table.add_column("Farmacie di Turno", style="bold green")
-
-        for week in sorted(schedule.keys()):
-            farmacie = schedule[week]
-            formatted_farmacie = [f"F{f} ({get_zona(f)})" for f in sorted(farmacie)]
-            date_str = get_week_date(week, year)
-            week_display = f"Wk {week:<2} ({date_str})"
-            table.add_row(week_display, ", ".join(formatted_farmacie))
-            
-        console.print(table)
-
-        # 2. Print Shift Statistics Table
-        stat_table = Table(title="Statistiche Turni", show_header=True, header_style="bold magenta")
-        stat_table.add_column("Farmacia", justify="center")
-        stat_table.add_column("Turni Assegnati", justify="right")
-
-        total_shifts_counted = 0
-        for farmacia in range(1, 11): 
-            count = sum(farmacia in farmacie for farmacie in schedule.values())
-            total_shifts_counted += count
-            stat_table.add_row(f"F{farmacia}", str(count))
-            
-        console.print(stat_table)
-        
-        console.print(f"[bold cyan]Totale complessivo turni assegnati:[/bold cyan] {total_shifts_counted}")
-        if len(schedule) > 0:
-            media = total_shifts_counted / len(schedule.keys())
-            console.print(f"[bold cyan]Media farmacie per settimana:[/bold cyan] {media:.1f}")
-
-        # 3. Print Optimization Cost
         import re
         cost_match = re.search(r"COST\s+(\d+)@\d+", asp_output, re.IGNORECASE)
-        if cost_match:
-            penalty = int(cost_match.group(1))
-            console.print(f"\n[bold magenta]Valore di Ottimizzazione (Penalità divario):[/bold magenta] {penalty}")
-        else:
-            console.print("\n[yellow]Nessun dato di ottimizzazione (COST) trovato nell'output.[/yellow]")
+        cost_value = int(cost_match.group(1)) if cost_match else None
 
-        console.print(f"\n[bold green]Computation time: {elapsed_time:.2f} seconds[/bold green]")
+        renderables = generate_output_tables(schedule, year, cost_value=cost_value, elapsed_time=elapsed_time)
+        
+        if num_solutions is not None:
+            renderables.append(Text.from_markup(f"\n[cyan]✓ Solved![/cyan] [green]Found {num_solutions} solutions.[/green]"))
+            
+        for r in renderables:
+            console.print(r)
 
         if csv_file:
             run_info = {
