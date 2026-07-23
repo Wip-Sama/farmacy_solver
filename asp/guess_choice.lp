@@ -9,3 +9,4 @@ M { turno(S, F) : farmacia(F) } L :- settimana(S), min_farmacie_settimana(M), ma
 % 5. OUTPUT
 % -----------------------------------------
 #show turno/2.
+#show turno_festivo/2.

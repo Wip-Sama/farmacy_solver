@@ -10,19 +10,10 @@ farmacia(1..10).
 zona(1..6, centro).
 zona(7..10, marina).
 
-% Definizione del periodo estivo e festivi
+% Definizione del periodo estivo e invernale
 estate(25..37).
 inverno(38..52).
 inverno(1..25).
-festivo(1).
-festivo(15).
-festivo(16).
-festivo(17).
-festivo(22).
-festivo(32).
-festivo(43).
-festivo(49).
-festivo(51).
 
 % Fatti dinamici: numero minimo e massimo di farmacie che devono turnare ogni settimana
 min_farmacie_settimana(1).

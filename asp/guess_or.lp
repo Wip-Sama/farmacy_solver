@@ -12,3 +12,4 @@ turno(S, F) | no_turno(S, F) :- settimana(S), farmacia(F).
 % 5. OUTPUT
 % -----------------------------------------
 #show turno/2.
+#show turno_festivo/2.

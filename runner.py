@@ -1,210 +1,28 @@
 import argparse
-import subprocess
 import logging
 import sys
 import os
 import time
-import csv
-import tempfile
 from datetime import date
-from terminal_display import parse_schedule, print_weekly_schedule, print_shift_statistics, print_optimization_cost, generate_csv_report
+from runner_core import (
+    parse_festivities,
+    generate_dynamic_constraints,
+    run_clingo,
+    run_external_solver
+)
+from terminal_display import (
+    parse_schedule,
+    print_weekly_schedule,
+    print_shift_statistics,
+    print_optimization_cost,
+    generate_csv_report
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def run_external_solver(executable, domain_file, guess_file, constraints_file, opt_file, dynamic_file=None, live=False, time_limit=None):
-    files = [domain_file, guess_file, constraints_file, opt_file]
-    if dynamic_file:
-        files.append(dynamic_file)
-    logging.info(f"Running {executable.upper()} solver with files: {', '.join(files)}")
-    if live:
-        logging.warning(f"Live printing is currently fully supported only with --clingo. {executable.upper()} will process normally.")
-        
-    try:
-        process = subprocess.Popen(
-            [executable] + files,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        stdout, stderr = process.communicate(timeout=time_limit)
-        if process.returncode != 0 and process.returncode is not None:
-            logging.error(f"{executable.upper()} execution failed: {stderr}")
-            sys.exit(1)
-        return stdout
-    except subprocess.TimeoutExpired:
-        logging.warning(f"Time limit of {time_limit}s reached. Terminating {executable.upper()}...")
-        process.terminate()
-        stdout, _ = process.communicate()
-        return stdout
-    except KeyboardInterrupt:
-        logging.warning(f"Execution interrupted by user (Ctrl+C). Terminating {executable.upper()}...")
-        process.terminate()
-        stdout, _ = process.communicate()
-        return stdout
-    except FileNotFoundError:
-        logging.error(f"{executable.upper()} executable not found. Please ensure it is installed and in your PATH.")
-        sys.exit(1)
-
-def run_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic_file=None, live=False, time_limit=None):
-    files = [domain_file, guess_file, constraints_file, opt_file]
-    if dynamic_file:
-        files.append(dynamic_file)
-    logging.info(f"Running Clingo solver via Python API with files: {', '.join(files)}")
-    try:
-        import clingo
-    except ImportError:
-        logging.error("The 'clingo' Python module is not installed. Please install it using 'pip install clingo'.")
-        sys.exit(1)
-
-    ctl = clingo.Control()
-    for f in files:
-        ctl.load(f)
-    logging.info("Grounding...")
-    ctl.ground([("base", [])])
-    
-    models = []
-    costs = []
-
-    def on_model(m):
-        logging.info("Found a new solution!")
-        model_str = " ".join(str(sym) for sym in m.symbols(shown=True))
-        models.append(model_str)
-        if m.cost:
-            costs.append(m.cost)
-            
-        if live:
-            from terminal_display import parse_schedule, print_weekly_schedule
-            print("\n" + "="*50)
-            print("LIVE SOLUTION UPDATE")
-            print("="*50)
-            schedule = parse_schedule(model_str)
-            print_weekly_schedule(schedule)
-            if m.cost:
-                print(f"Current Optimization Value: {m.cost[0]}")
-            print("="*50 + "\n")
-
-    logging.info("Solving...")
-    
-    with ctl.solve(on_model=on_model, async_=True) as handle:
-        try:
-            if time_limit is not None:
-                end_time = time.time() + time_limit
-                finished = False
-                while time.time() < end_time:
-                    if handle.wait(1.0):
-                        finished = True
-                        break
-                if not finished:
-                    logging.warning(f"Time limit of {time_limit}s reached. Cancelling solver...")
-                    handle.cancel()
-                    handle.wait()
-            else:
-                # Use a short timeout in a loop to allow Python to catch KeyboardInterrupt
-                while not handle.wait(1.0):
-                    pass
-        except KeyboardInterrupt:
-            logging.warning("Execution interrupted by user (Ctrl+C). Cancelling solver...")
-            handle.cancel()
-            handle.wait()
-    
-    output = ""
-    if models:
-        output += models[-1] + "\n"
-    if costs:
-        final_cost = costs[-1]
-        # Format the cost in the way terminal_display.py expects (DLV format: COST N@1)
-        output += f"COST {final_cost[0]}@1\n"
-        
-    return output
-
-def generate_dynamic_constraints(reschedule_csv, reschedule_from, unavailables, unavailable_intervals, start_week, end_week):
-    """
-    Generates a temporary ASP file containing dynamic constraints for rescheduling.
-    
-    Example generated rules:
-    ```asp
-    % When reading from previous CSV with --reschedule-from 20
-    reschedule_from(20).
-    past_turno(1, 1).
-    past_turno(1, 3).
-    % ...
-    % Lock past weeks
-    :- past_turno(S, F), not turno(S, F).
-    :- turno(S, F), S < START_WEEK, not past_turno(S, F), reschedule_from(START_WEEK).
-
-    % From --unavailable 1,22
-    :- turno(22, 1).
-
-    % From --unavailable-interval 3,25,28
-    :- turno(S, 3), S >= 25, S <= 28.
-    ```
-    🥲 non vanno ne markdown ne wmoji in vscode nei commenti in vscode... piango
-    """
-    lines = []
-    
-    actual_start_week = start_week
-    
-    if reschedule_csv and reschedule_from:
-        actual_start_week = 1
-        lines.append(f"reschedule_from({reschedule_from}).\n")
-        try:
-            with open(reschedule_csv, mode='r', encoding='utf-8') as file:
-                reader = csv.reader(file)
-                headers = next(reader, None)
-                for row in reader:
-                    if not row or len(row) < 12:
-                        continue
-                    try:
-                        week = int(row[0])
-                        if week < reschedule_from:
-                            for i in range(1, 11):
-                                if row[i+1] == "1":
-                                    lines.append(f"past_turno({week}, {i}).\n")
-                    except ValueError:
-                        continue
-                        
-        except Exception as e:
-            logging.error(f"Failed to read CSV file {reschedule_csv}: {e}")
-            sys.exit(1)
-            
-        lines.append("% Lock past weeks\n")
-        lines.append(":- past_turno(S, F), not turno(S, F).\n")
-        lines.append(":- turno(S, F), S < START_WEEK, not past_turno(S, F), reschedule_from(START_WEEK).\n")
-        
-    if unavailables:
-        for u in unavailables:
-            try:
-                f, w = u.split(',')
-                lines.append(f":- turno({w}, {f}).\n")
-            except ValueError:
-                logging.error(f"Invalid format for --unavailable: {u}. Expected F,W")
-                sys.exit(1)
-                
-    if unavailable_intervals:
-        for u in unavailable_intervals:
-            try:
-                f, w1, w2 = u.split(',')
-                lines.append(f":- turno(S, {f}), S >= {w1}, S <= {w2}.\n")
-            except ValueError:
-                logging.error(f"Invalid format for --unavailable-interval: {u}. Expected F,W1,W2")
-                sys.exit(1)
-                
-    if not lines:
-        # We always need the settimana fact!
-        lines.append(f"settimana({actual_start_week}..{end_week}).\n")
-        
-    else:
-        # Prepend the settimana fact to ensure it's loaded
-        lines.insert(0, f"settimana({actual_start_week}..{end_week}).\n")
-        
-    fd, path = tempfile.mkstemp(suffix=".lp", text=True)
-    with os.fdopen(fd, 'w') as f:
-        f.writelines(lines)
-    return path
-
 def main():
-    optimizations = opt_file = os.path.join("asp", "optimizations")
+    optimizations = os.path.join("asp", "optimizations")
     if not os.path.exists(optimizations):
         logging.error(f"Optimizations directory '{optimizations}' not found.")
         sys.exit(1)
@@ -241,6 +59,14 @@ def main():
     parser.add_argument('--end-week', type=int, default=None,
                         help="Settimana di fine per la schedulazione (default: ultima settimana dell'anno).")
     
+    # Festivities & history flags
+    parser.add_argument('--festivities', type=str, action='append', metavar='NAME,START,FINISH',
+                        help="Custom festivities in format 'name,start_date,finish_date' or 'name,date'.")
+    parser.add_argument('--auto-festivities', action='store_true',
+                        help="Automatically generate Italian national festivities for the year.")
+    parser.add_argument('--prev-year', type=str, metavar='FILENAME',
+                        help="Path to previous year's CSV schedule to extract past festivity assignments.")
+
     # Mutually exclusive group for solver selection
     solver_group = parser.add_mutually_exclusive_group()
     solver_group.add_argument('--dlv', action='store_true', help="Use DLV solver.")
@@ -255,6 +81,8 @@ def main():
         args.csv = os.path.join(csv_dir, args.csv)
     if args.reschedule_csv and not os.path.dirname(args.reschedule_csv):
         args.reschedule_csv = os.path.join(csv_dir, args.reschedule_csv)
+    if args.prev_year and not os.path.dirname(args.prev_year):
+        args.prev_year = os.path.join(csv_dir, args.prev_year)
 
     # Default to clingo if no solver is specified
     if not args.dlv and not args.dlv2 and not args.clingo:
@@ -285,22 +113,37 @@ def main():
         logging.error(f"Error: --start-week {args.start_week} cannot be greater than --end-week {end_week}.")
         sys.exit(1)
 
+    festivities_dict = parse_festivities(args.festivities, args.auto_festivities, args.year)
+
     dynamic_file = None
     try:
         dynamic_file = generate_dynamic_constraints(
             args.reschedule_csv, args.reschedule_from, 
             args.unavailable, args.unavailable_interval,
-            args.start_week, end_week
+            args.start_week, end_week,
+            festivities_dict=festivities_dict,
+            prev_year_csv=args.prev_year
         )
+
+        def on_model_cb(m, model_str, count):
+            if args.live:
+                print("\n" + "="*50)
+                print(f"LIVE SOLUTION UPDATE #{count}")
+                print("="*50)
+                schedule, fest_sched = parse_schedule(model_str)
+                print_weekly_schedule(schedule, args.year, fest_sched, festivities_dict)
+                if m.cost:
+                    print(f"Current Optimization Value: {m.cost[0]}")
+                print("="*50 + "\n")
 
         # Run the selected solver
         start_time = time.time()
         if args.clingo:
-            asp_output = run_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic_file=dynamic_file, live=args.live, time_limit=args.time_limit)
+            asp_output, _ = run_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic_file=dynamic_file, live=args.live, time_limit=args.time_limit, year=args.year, on_model_cb=on_model_cb)
         elif args.dlv2:
-            asp_output = run_external_solver('dlv2', domain_file, guess_file, constraints_file, opt_file, dynamic_file=dynamic_file, live=args.live, time_limit=args.time_limit)
+            asp_output, _ = run_external_solver('dlv2', domain_file, guess_file, constraints_file, opt_file, dynamic_file=dynamic_file, live=args.live, time_limit=args.time_limit)
         else:
-            asp_output = run_external_solver('dlv', domain_file, guess_file, constraints_file, opt_file, dynamic_file=dynamic_file, live=args.live, time_limit=args.time_limit)
+            asp_output, _ = run_external_solver('dlv', domain_file, guess_file, constraints_file, opt_file, dynamic_file=dynamic_file, live=args.live, time_limit=args.time_limit)
         elapsed_time = time.time() - start_time
     finally:
         if dynamic_file and os.path.exists(dynamic_file):
@@ -311,12 +154,12 @@ def main():
         sys.exit(0)
 
     # Parse and display using the existing terminal_display logic
-    schedule = parse_schedule(asp_output)
+    schedule, festivo_schedule = parse_schedule(asp_output)
     if not schedule:
         logging.error("No schedule could be parsed from the output.")
         sys.exit(1)
 
-    print_weekly_schedule(schedule, args.year)
+    print_weekly_schedule(schedule, args.year, festivo_schedule, festivities_dict)
     print_shift_statistics(schedule)
     print_optimization_cost(asp_output)
     print(f"\nComputation time: {elapsed_time:.2f} seconds")
@@ -330,7 +173,7 @@ def main():
         }
         if os.path.dirname(args.csv):
             os.makedirs(os.path.dirname(args.csv), exist_ok=True)
-        generate_csv_report(schedule, args.csv, run_info, args.year)
+        generate_csv_report(schedule, args.csv, run_info, args.year, festivo_schedule, festivities_dict)
 
 if __name__ == "__main__":
     main()

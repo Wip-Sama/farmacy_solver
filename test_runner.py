@@ -3,9 +3,7 @@ import subprocess
 import os
 
 class TestRunner(unittest.TestCase):
-    def test_dlv_argument_parsing(self):
-        # We can't easily mock argparse inside the script execution without refactoring main,
-        # but we can test that calling the script with --help works.
+    def test_help_argument_parsing(self):
         result = subprocess.run(
             ['python', 'runner.py', '--help'],
             stdout=subprocess.PIPE,
@@ -13,19 +11,10 @@ class TestRunner(unittest.TestCase):
             text=True
         )
         self.assertIn('--opt', result.stdout)
-        self.assertIn('--dlv', result.stdout)
-        self.assertIn('--clingo', result.stdout)
+        self.assertIn('--festivities', result.stdout)
+        self.assertIn('--auto-festivities', result.stdout)
+        self.assertIn('--prev-year', result.stdout)
         self.assertEqual(result.returncode, 0)
-
-    def test_missing_opt_argument(self):
-        result = subprocess.run(
-            ['python', 'runner.py', '--dlv'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('the following arguments are required: --opt', result.stderr)
 
     def test_invalid_opt_argument(self):
         result = subprocess.run(
