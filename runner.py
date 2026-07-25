@@ -42,11 +42,19 @@ def main():
                         help="Print live the latest found solution as it is discovered.")
     parser.add_argument('--csv', type=str, metavar='FILENAME',
                         help="Generate a CSV report of the schedule to the specified file.")
+    parser.add_argument('--csv-mode', choices=['compact', 'normal', 'tiny', 'extended'], default='normal',
+                        help="CSV mode: compact (1 row/week, full cols), normal (break week on festivity), tiny (1 row/week, condensed col), extended (daily view).")
+    parser.add_argument('--csv-direction', choices=['column', 'row'], default='column',
+                        help="CSV direction: column (vertical top-to-bottom), row (12-month horizontal grid).")
+    parser.add_argument('--csv-map-pharmacies', type=str, metavar='MAPPING',
+                        help="Pharmacy name mapping (e.g. '1,BUCCARELLI;2,SANMICHELE' or path to file).")
+    parser.add_argument('--first-day-of-the-week', '--fdotw', dest='first_day_of_week', default='monday',
+                        help="First day of the week for scheduling (e.g. monday, saturday, sunday, 0..6).")
     
     parser.add_argument('--reschedule-csv', type=str, metavar='FILENAME',
                         help="Path to the CSV file of a previous run.")
-    parser.add_argument('--reschedule-from', type=int, metavar='WEEK',
-                        help="Week number from which to reschedule (past weeks will be fixed). Requires --reschedule-csv.")
+    parser.add_argument('--reschedule-from', type=str, metavar='WEEK',
+                        help="Week number from which to reschedule (number or 'now'). Requires --reschedule-csv.")
     parser.add_argument('--unavailable', type=str, nargs='+', metavar='F,W',
                         help="List of unavailable pharmacies in specific weeks (e.g., 3,15 4,16).")
     parser.add_argument('--unavailable-interval', type=str, nargs='+', metavar='F,W1,W2',
@@ -54,10 +62,10 @@ def main():
     
     parser.add_argument('--year', type=int, default=2025,
                         help="L'anno per cui si vuole generare il calendario (default: 2025).")
-    parser.add_argument('--start-week', type=int, default=1,
-                        help="Settimana di inizio per la schedulazione (default: 1).")
-    parser.add_argument('--end-week', type=int, default=None,
-                        help="Settimana di fine per la schedulazione (default: ultima settimana dell'anno).")
+    parser.add_argument('--start-week', type=str, default='1',
+                        help="Settimana di inizio per la schedulazione (numero o 'now').")
+    parser.add_argument('--end-week', type=str, default=None,
+                        help="Settimana di fine per la schedulazione (numero o 'now').")
     
     # Festivities & history flags
     parser.add_argument('--festivities', type=str, action='append', metavar='NAME,START,FINISH',
@@ -102,15 +110,25 @@ def main():
         parser.error("--reschedule-from requires --reschedule-csv")
 
     total_weeks = date(args.year, 12, 28).isocalendar()[1]
+
+    from runner_core import parse_week_param
+    start_week = parse_week_param(args.start_week, args.year, args.first_day_of_week) or 1
+    end_week = parse_week_param(args.end_week, args.year, args.first_day_of_week) or total_weeks
+    reschedule_from = parse_week_param(args.reschedule_from, args.year, args.first_day_of_week)
+
+    if args.reschedule_csv:
+        if reschedule_from is None:
+            if start_week > 1:
+                reschedule_from = start_week
+            else:
+                reschedule_from = 1
     
-    end_week = args.end_week if args.end_week is not None else total_weeks
-    
-    if args.start_week > total_weeks:
-        logging.error(f"Error: --start-week {args.start_week} is greater than the total number of weeks in year {args.year} ({total_weeks}).")
+    if start_week > total_weeks:
+        logging.error(f"Error: --start-week {start_week} is greater than the total number of weeks in year {args.year} ({total_weeks}).")
         sys.exit(1)
         
-    if args.start_week > end_week:
-        logging.error(f"Error: --start-week {args.start_week} cannot be greater than --end-week {end_week}.")
+    if start_week > end_week:
+        logging.error(f"Error: --start-week {start_week} cannot be greater than --end-week {end_week}.")
         sys.exit(1)
 
     festivities_dict = parse_festivities(args.festivities, args.auto_festivities, args.year)
@@ -118,11 +136,13 @@ def main():
     dynamic_file = None
     try:
         dynamic_file = generate_dynamic_constraints(
-            args.reschedule_csv, args.reschedule_from, 
+            args.reschedule_csv, reschedule_from, 
             args.unavailable, args.unavailable_interval,
-            args.start_week, end_week,
+            start_week, end_week,
             festivities_dict=festivities_dict,
-            prev_year_csv=args.prev_year
+            prev_year_csv=args.prev_year,
+            first_day_of_week=args.first_day_of_week,
+            year=args.year
         )
 
         def on_model_cb(m, model_str, count):
@@ -131,7 +151,7 @@ def main():
                 print(f"LIVE SOLUTION UPDATE #{count}")
                 print("="*50)
                 schedule, fest_sched = parse_schedule(model_str)
-                print_weekly_schedule(schedule, args.year, fest_sched, festivities_dict)
+                print_weekly_schedule(schedule, args.year, fest_sched, festivities_dict, first_day_of_week=args.first_day_of_week)
                 if m.cost:
                     print(f"Current Optimization Value: {m.cost[0]}")
                 print("="*50 + "\n")
@@ -159,7 +179,7 @@ def main():
         logging.error("No schedule could be parsed from the output.")
         sys.exit(1)
 
-    print_weekly_schedule(schedule, args.year, festivo_schedule, festivities_dict)
+    print_weekly_schedule(schedule, args.year, festivo_schedule, festivities_dict, first_day_of_week=args.first_day_of_week)
     print_shift_statistics(schedule)
     print_optimization_cost(asp_output)
     print(f"\nComputation time: {elapsed_time:.2f} seconds")
@@ -173,7 +193,11 @@ def main():
         }
         if os.path.dirname(args.csv):
             os.makedirs(os.path.dirname(args.csv), exist_ok=True)
-        generate_csv_report(schedule, args.csv, run_info, args.year, festivo_schedule, festivities_dict)
+        generate_csv_report(
+            schedule, args.csv, run_info, args.year, festivo_schedule, festivities_dict,
+            csv_mode=args.csv_mode, csv_direction=args.csv_direction, csv_map_pharmacies=args.csv_map_pharmacies,
+            first_day_of_week=args.first_day_of_week
+        )
 
 if __name__ == "__main__":
     main()

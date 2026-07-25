@@ -72,7 +72,7 @@ class TestFestivities(unittest.TestCase):
                 content = f.read()
 
             self.assertIn('festivita("natale"', content)
-            self.assertIn('turno_festivo', content)
+            self.assertNotIn('turno_festivo', content)
         finally:
             if os.path.exists(dyn_path):
                 os.remove(dyn_path)
@@ -80,11 +80,10 @@ class TestFestivities(unittest.TestCase):
     def test_parse_schedule_and_csv_generation(self):
         mock_output = """
         turno(16, 1) turno(16, 2)
-        turno_festivo("liberazione", 3) turno_festivo("liberazione", 4)
         """
         schedule, fest_sched = parse_schedule(mock_output)
         self.assertEqual(schedule[16], [1, 2])
-        self.assertEqual(fest_sched["liberazione"], [3, 4])
+        self.assertEqual(fest_sched, {})
 
         fest_dict = {date(2025, 4, 25): "Liberazione"}  # Friday in 2025 (Week 16)
         fd, csv_path = tempfile.mkstemp(suffix=".csv", text=True)
@@ -95,7 +94,8 @@ class TestFestivities(unittest.TestCase):
             with open(csv_path, 'r', encoding='utf-8') as f:
                 rows = list(csv.reader(f))
 
-            header = rows[0]
+            self.assertTrue(rows[0][0].startswith('# Metadata'))
+            header = rows[1]
             self.assertEqual(header[:3], ["Settimana", "Data", "Festività"])
             
             # Find Liberazione row
@@ -104,13 +104,55 @@ class TestFestivities(unittest.TestCase):
             c_row = liberazione_rows[0]
             self.assertEqual(c_row[0], "16")
             self.assertEqual(c_row[1], "2025-04-25")
-            # F3 (index 5) and F4 (index 6) should be "1"
-            self.assertEqual(c_row[5], "1")
-            self.assertEqual(c_row[6], "1")
-            self.assertEqual(c_row[3], "") # F1
+            # F1 (index 3) and F2 (index 4) should be "1" (same as weekly shift)
+            self.assertEqual(c_row[3], "1")
+            self.assertEqual(c_row[4], "1")
+            self.assertEqual(c_row[5], "") # F3
         finally:
             if os.path.exists(csv_path):
                 os.remove(csv_path)
+
+    def test_festivity_previous_year_rule_in_asp(self):
+        import clingo
+        program = """
+        farmacia(1..2).
+        settimana(1).
+        1 { turno(1, F) : farmacia(F) } 1.
+        festivita("natale", 1).
+        past_festivita("natale", 1).
+        :- festivita(N, S), turno(S, F), past_festivita(N, F).
+        """
+        ctl = clingo.Control()
+        ctl.add("base", [], program)
+        ctl.ground([("base", [])])
+        
+        models = []
+        with ctl.solve(yield_=True) as handle:
+            for m in handle:
+                models.append([str(sym) for sym in m.symbols(shown=True)])
+                
+        self.assertEqual(len(models), 1)
+        self.assertIn("turno(1,2)", models[0])
+        self.assertNotIn("turno(1,1)", models[0])
+
+    def test_weekend_festivity_ignores_previous_year(self):
+        fest_dict = {date(2026, 8, 15): "Ferragosto"}  # Saturday in 2026
+        dyn_path = generate_dynamic_constraints(
+            reschedule_csv=None,
+            reschedule_from=None,
+            unavailables=None,
+            unavailable_intervals=None,
+            start_week=33,
+            end_week=33,
+            festivities_dict=fest_dict
+        )
+        try:
+            with open(dyn_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            self.assertNotIn('festivita("ferragosto"', content)
+        finally:
+            if os.path.exists(dyn_path):
+                os.remove(dyn_path)
 
 if __name__ == '__main__':
     unittest.main()

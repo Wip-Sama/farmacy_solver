@@ -33,11 +33,15 @@ python rich_runner.py --time-limit 60
 | `--dlv2`                              | DLV2 solver                                                             |
 | `--clingo`                            | Clingo solver (default)                                                 |
 | `--year`                              | Target year (default: 2025)                                             |
-| `--start-week`                        | Start scheduling from week                                              |
-| `--end-week`                          | End scheduling at week                                                  |
+| `--start-week`                        | Start scheduling from week (int or `now`)                               |
+| `--end-week`                          | End scheduling at week (int or `now`)                                 |
 | `--time-limit`                        | Time limit for solver in seconds                                        |
 | `--live`                              | Print live latest found solutions as discovered                         |
 | `--csv`                               | Generate a CSV report of the schedule                                   |
+| `--csv-mode`                          | CSV mode: `compact` (1 row/week, full cols), `normal` (segmented), `tiny` (1 row/week, condensed col), `extended` (daily) |
+| `--csv-direction`                     | CSV direction: `column` (top-to-bottom), `row` (12-month horizontal grid)|
+| `--csv-map-pharmacies`                | Map pharmacy IDs to custom names (e.g. `1,BUCCARELLI;2,SANMICHELE` or file)|
+| `--first-day-of-the-week` / `--fdotw`  | Set first day of the week (`monday`, `saturday`, `sunday`, or `0..6`)    |
 | `--auto-festivities`                  | Auto-generate national Italian festivities for the year                 |
 | `--festivities`                       | Custom festivities (`NAME,START,FINISH` or `NAME,DATE`)                 |
 | `--prev-year`                         | Path to previous year CSV to prevent consecutive-year festivity repeats |
@@ -46,17 +50,39 @@ python rich_runner.py --time-limit 60
 | `--unavailable`                       | List of unavailable pharmacies (e.g. `1,22`)                            |
 | `--unavailable-interval`              | Interval of unavailability (e.g. `3,22,28`)                             |
 
-### Festivities Management
+### Festivities & CSV Report Management
 
 When `--auto-festivities` or `--festivities` is enabled:
-- Mid-week festivities (Mon-Fri) switch out all assigned pharmacies for the holiday with a completely disjoint set.
+- Mid-week festivities (Mon-Fri) retain the regular weekly shift without splitting the week or swapping pharmacies.
 - Festivities falling on weekends keep the normal shift while adding the festivity label.
-- `--prev-year` prevents any pharmacy from covering the same holiday two years in a row.
-- The CSV report splits weeks containing mid-week festivities and populates the `Festività` column.
+- `--prev-year` prevents any pharmacy from covering a mid-week festivity if they covered the same festivity the previous year.
+- CSV output and week boundaries can be customized using:
+  - `--first-day-of-the-week` (`--fdotw`): Specify start day of weekly shift (e.g. `saturday` for Saturday-Friday shift cycles).
+  - `--csv-mode compact`: 1 row per week (no line breaks on festivities) with full pharmacy columns (`F1`..`F10` or mapped names).
+  - `--csv-mode tiny`: 1 row per week with a single condensed pharmacy column (`Farmacie di Turno`).
+  - `--csv-mode normal`: Weekly shift blocks broken on festivity days.
+  - `--csv-mode extended`: 365/366 daily rows with full weekday and holiday annotations.
+  - `--csv-direction row`: 12-month side-by-side calendar grid (4 columns per month: `Giorno`, `Lu-Do`, `Festività`, `Farmacie di Turno`).
+  - `--csv-map-pharmacies`: Replaces numeric IDs (e.g. `F1`) with mapped names (e.g. `BUCCARELLI`).
+
+### Utility Scripts
+
+- **`validate_csv.py`**: Validates a generated CSV schedule against all core ASP business rules (Python inspection or Clingo `--asp` coherence solver):
+  ```shell
+  # Validate using Python rules inspection
+  python validate_csv.py schedules/schedule_2026.csv --prev-year schedules/schedule_2025.csv
+
+  # Validate using Clingo ASP solver coherence check
+  python validate_csv.py schedules/schedule_2026.csv --asp --prev-year schedules/schedule_2025.csv
+  ```
+- **`compare_csv.py`**: Compares two CSV schedule files side-by-side (metadata diffs, weekly assignment diffs, pharmacy workload deltas):
+  ```shell
+  python compare_csv.py schedules/schedule_2025.csv schedules/schedule_2026.csv
+  ```
 
 ```shell
-# Run with automatic Italian holidays and save to CSV
-python rich_runner.py --year 2025 --auto-festivities --csv schedule_2025.csv --time-limit 60
+# Run with automatic Italian holidays, horizontal 12-month grid layout, and mapped pharmacy names
+python rich_runner.py --year 2025 --auto-festivities --csv schedule_2025.csv --csv-direction row --csv-map-pharmacies "1,BUCCARELLI;2,SANMICHELE"
 
 # Run for 2026 using 2025 schedule to prevent repeating holidays
 python rich_runner.py --year 2026 --auto-festivities --prev-year schedule_2025.csv --csv schedule_2026.csv

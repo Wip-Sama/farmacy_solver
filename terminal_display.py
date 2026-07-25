@@ -2,15 +2,15 @@ import sys
 import argparse
 import re
 import csv
+import os
+import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-def get_week_date(week_number, year=2025):
-    d = datetime(year, 1, 1)
-    if d.weekday() != 0:
-        d += timedelta(days=(7 - d.weekday()))
-    current_date = d + timedelta(weeks=week_number - 1)
-    return current_date.strftime("%Y-%m-%d")
+def get_week_date(week_number, year=2025, first_day_of_week=0):
+    from runner_core import get_week_start_date
+    d_obj = get_week_start_date(week_number, year, first_day_of_week)
+    return d_obj.strftime("%Y-%m-%d")
 
 def parse_arguments():
     """Gestisce gli argomenti passati da riga di comando (argv)."""
@@ -83,7 +83,7 @@ def get_zona(f_id):
     return "Centro" if 1 <= f_id <= 6 else "Marina"
 
 
-def print_weekly_schedule(schedule, year=2025, festivo_schedule=None, festivities_dict=None):
+def print_weekly_schedule(schedule, year=2025, festivo_schedule=None, festivities_dict=None, first_day_of_week=0):
     """Stampa la tabella del calendario settimanale spezzando le righe sulle festività."""
     print("-" * 85)
     print(f"{'Settimana':<22} | {'Festività':<20} | {'Farmacie di Turno'}")
@@ -93,7 +93,7 @@ def print_weekly_schedule(schedule, year=2025, festivo_schedule=None, festivitie
     fest_dict = festivities_dict or {}
 
     for week in sorted(schedule.keys()):
-        monday_str = get_week_date(week, year)
+        monday_str = get_week_date(week, year, first_day_of_week)
         monday_date = datetime.strptime(monday_str, "%Y-%m-%d").date()
         
         days_details = []
@@ -101,10 +101,7 @@ def print_weekly_schedule(schedule, year=2025, festivo_schedule=None, festivitie
             day_date = monday_date + timedelta(days=day_idx)
             fest_name = fest_dict.get(day_date, "")
             
-            if fest_name and day_idx < 5:  # mid-week festivity
-                f_assigned = set(festivo_sched.get(fest_name.lower(), schedule[week]))
-            else:
-                f_assigned = set(schedule[week])
+            f_assigned = set(schedule[week])
 
             days_details.append((day_date, fest_name, f_assigned))
 
@@ -131,70 +128,7 @@ def print_weekly_schedule(schedule, year=2025, festivo_schedule=None, festivitie
             print(f"{week_display:<22} | {fest_label:<20} | {', '.join(formatted_farmacie)}")
     print("-" * 85)
 
-def generate_csv_report(schedule, filename, run_info=None, year=2025, festivo_schedule=None, festivities_dict=None):
-    """Genera un report CSV della turnazione con la colonna 'Festività' e spezzamento righe per festività."""
-    try:
-        with open(filename, mode='w', newline='', encoding='utf-8') as file:
-            writer = csv.writer(file)
-            
-            # Intestazione: Settimana, Data, Festività, F1, F2, ..., F10
-            header = ['Settimana', 'Data', 'Festività'] + [f"F{i}" for i in range(1, 11)]
-            writer.writerow(header)
-            
-            festivo_sched = festivo_schedule or {}
-            fest_dict = festivities_dict or {}
-
-            for week in sorted(schedule.keys()):
-                monday_str = get_week_date(week, year)
-                monday_date = datetime.strptime(monday_str, "%Y-%m-%d").date()
-                
-                # Construct 7 days details
-                days_details = []
-                for day_idx in range(7):
-                    day_date = monday_date + timedelta(days=day_idx)
-                    fest_name = fest_dict.get(day_date, "")
-                    
-                    if fest_name and day_idx < 5:  # mid-week festivity
-                        f_assigned = set(festivo_sched.get(fest_name.lower(), schedule[week]))
-                    else:
-                        f_assigned = set(schedule[week])
-
-                    days_details.append((day_date, fest_name, f_assigned))
-
-                # Group consecutive days with identical (fest_name, f_assigned)
-                current_group = [days_details[0]]
-                groups = []
-                for d_info in days_details[1:]:
-                    prev = current_group[-1]
-                    if d_info[1] == prev[1] and d_info[2] == prev[2]:
-                        current_group.append(d_info)
-                    else:
-                        groups.append(current_group)
-                        current_group = [d_info]
-                if current_group:
-                    groups.append(current_group)
-
-                for group in groups:
-                    start_date_str = group[0][0].strftime("%Y-%m-%d")
-                    fest_label = group[0][1]
-                    f_assigned = group[0][2]
-
-                    row = [week, start_date_str, fest_label]
-                    for i in range(1, 11):
-                        row.append(1 if i in f_assigned else "")
-                    writer.writerow(row)
-                
-            if run_info:
-                writer.writerow([])
-                writer.writerow(['--- Run Info ---'])
-                writer.writerow(['Solver', run_info.get('solver', 'N/A')])
-                writer.writerow(['Base', run_info.get('base', 'N/A')])
-                writer.writerow(['Optimization', run_info.get('opt', 'N/A')])
-                writer.writerow(['Computation Time (s)', f"{run_info.get('time', 0):.2f}"])
-                
-        print(f"Report CSV generato con successo in: {filename}")
-    except Exception as e:
-        print(f"Errore durante la generazione del report CSV: {e}")
+from csv_utils import parse_pharmacy_mapping, generate_csv_report
 
 
 

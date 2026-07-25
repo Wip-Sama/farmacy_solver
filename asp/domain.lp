@@ -10,10 +10,9 @@ farmacia(1..10).
 zona(1..6, centro).
 zona(7..10, marina).
 
-% Definizione del periodo estivo e invernale
-estate(25..37).
-inverno(38..52).
-inverno(1..25).
+% Definizione del periodo estivo (15 giugno - 15 settembre) e invernale (generati dinamicamente)
+% estate(W_START..W_END).
+% inverno(W) :- settimana(W), not estate(W).
 
 % Fatti dinamici: numero minimo e massimo di farmacie che devono turnare ogni settimana
 min_farmacie_settimana(1).

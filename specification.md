@@ -59,8 +59,7 @@ If `--start-week 20` is specified without rescheduling, `settimana(20..52).` is 
 When `--reschedule-csv <file>` and `--reschedule-from <WEEK>` are provided:
 1. Python reads `<file>` and extracts past week assignments for weeks `< WEEK`.
 2. Emits `past_turno(Week, Farmacia).` facts.
-3. If past festivity shifts exist, emits `past_turno_festivo(FestivityName, Farmacia).` facts.
-4. Generates locking constraints:
+3. Generates locking constraints:
 
 ```asp
 reschedule_from(20).
@@ -72,9 +71,6 @@ past_turno(1, 3).
 
 :- past_turno(S, F), not turno(S, F).
 :- turno(S, F), S < START_WEEK, not past_turno(S, F), reschedule_from(START_WEEK).
-
-% Lock past festivity shifts
-:- past_turno_festivo(N, F), not turno_festivo(N, F).
 ```
 
 ---
@@ -92,31 +88,28 @@ When `--unavailable <F,W>` or `--unavailable-interval <F,W1,W2>` are passed:
 
 ---
 
-### 2.4 Festivities Generation (`festivita`, `turno_festivo`, `past_festivita`)
+### 2.4 Festivities Generation (`festivita`, `past_festivita`)
 
 When `--auto-festivities` or `--festivities` is enabled:
 
 1. **Date-to-Week Mapping**:
    Python calculates exact holiday dates for the year (e.g. Capodanno, Pasquetta, Liberazione, Natale, etc.) or parses user-provided custom dates.
 2. **Weekend Exclusion**:
-   - Holidays falling on Saturday or Sunday do **not** trigger mid-week pharmacy swaps (they are covered by normal weekend duty). Python records their name for CSV labeling only.
-   - Holidays falling on Monday through Friday trigger a mid-week festivity assignment in ASP.
-3. **Dynamic ASP Facts & Choice Rules**:
+   - Holidays falling on Saturday or Sunday do **not** trigger mid-week festivity facts (they are covered by normal weekend duty without previous year checks). Python records their name for CSV labeling only.
+   - Holidays falling on Monday through Friday trigger a mid-week festivity fact in ASP without splitting the week or swapping pharmacies.
+3. **Dynamic ASP Facts**:
    For each mid-week festivity, Python emits:
    ```asp
    festivita("natale", 52).
-
-   % Choice rule: guess festivity assignments for active mid-week festivities
-   { turno_festivo(N, F) : farmacia(F) } :- festivita(N, S).
    ```
 4. **Historical Continuity (`--prev-year`)**:
    When `--prev-year <csv_file>` is supplied, Python parses previous year festivity assignments and emits historical facts:
    ```asp
    past_festivita("natale", 3). % Pharmacy 3 worked Natale last year
    ```
-   ASP constraint in `asp/constraints.lp` then prevents repetition:
+   ASP constraint in `asp/constraints.lp` then prevents the same pharmacy from being assigned to the weekly shift of that festivity:
    ```asp
-   :- turno_festivo(N, F), past_festivita(N, F).
+   :- festivita(N, S), turno(S, F), past_festivita(N, F).
    ```
 
 ---
@@ -127,11 +120,10 @@ When `--auto-festivities` or `--festivities` is enabled:
 The guess files (`asp/guess_choice.lp` and `asp/guess_or.lp`) contain output directives to ensure Clingo/DLV emit the required symbols:
 ```asp
 #show turno/2.
-#show turno_festivo/2.
 ```
 
 ### 3.2 ASP Constraint Rules (`asp/constraints.lp`)
-The static constraint file enforces all domain rules for both regular weekly shifts and festivity shifts:
+The static constraint file enforces all domain rules for regular weekly shifts and historical festivity checks:
 
 ```asp
 % Regular Weekly Shifts Constraints
@@ -141,29 +133,31 @@ The static constraint file enforces all domain rules for both regular weekly shi
 :- settimana(S), inverno(S), #count { F : turno(S, F), zona(F, centro) } < 1.
 :- turno(S, F1), turno(S, F2), zona(F1, marina), zona(F2, marina), F1 != F2.
 
-% Festivity Shifts Constraints
-:- festivita(N, S), #count { F : turno(S, F) } = K, #count { F : turno_festivo(N, F) } != K.
-:- festivita(N, S), turno_festivo(N, F), turno(S, F).
-:- festivita(N, S), turno_festivo(N, F), turno(S-1, F), settimana(S-1).
-:- festivita(N, S), turno_festivo(N, F), turno(S+1, F), settimana(S+1).
-:- turno_festivo(N, F), past_festivita(N, F).
-:- festivita(N, S), estate(S), #count { F : turno_festivo(N, F), zona(F, marina) } < 1.
-:- festivita(N, S), inverno(S), #count { F : turno_festivo(N, F), zona(F, centro) } < 1.
-:- festivita(N, S), turno_festivo(N, F1), turno_festivo(N, F2), zona(F1, marina), zona(F2, marina), F1 != F2.
+% Festivity Continuity Constraint
+:- festivita(N, S), turno(S, F), past_festivita(N, F).
 ```
 
 ---
 
 ## 4. Post-Processing & CSV Report Generation
 
-After the solver returns a answer set:
+After the solver returns an answer set:
 
 1. **Symbol Parsing (`parse_schedule`)**:
    - `turno(Week, Farmacia)` -> stored in `schedule[Week]`
-   - `turno_festivo(FestivityName, Farmacia)` -> stored in `festivo_schedule[FestivityName]`
-2. **Date Segmentation & CSV Output (`generate_csv_report`)**:
-   - For each week, Python evaluates each of the 7 days (Monday to Sunday).
-   - If a day is a mid-week festivity, its pharmacies are retrieved from `festivo_schedule`.
-   - If a day is a normal day or weekend festivity, its pharmacies are retrieved from `schedule[Week]`.
-   - Contiguous days with identical pharmacy assignments and festivity labels are grouped into a single CSV row.
-   - The `Festività` column is populated with the holiday name whenever applicable.
+2. **Metadata Header First Row**:
+   - Writes `# Metadata: Year=... | Solver=... | Time=... | Mode=... | Direction=... | Mappings=...` on the first row of the CSV file.
+3. **Flexible CSV Output (`csv_utils.generate_csv_report`)**:
+   - Supports `--csv-mode`:
+     - `compact`: 1 row per week (no breaks on festivities) with full pharmacy columns (`F1`..`F10` or mapped names).
+     - `tiny`: 1 row per week with a single condensed pharmacy column (`Farmacie di Turno`).
+     - `normal`: Grouped consecutive days with identical assignments, breaking rows on festivity days.
+     - `extended`: 365/366 daily rows with day of week (L..D) and holiday annotations.
+   - Supports `--csv-direction`:
+     - `column`: Vertical layout (rows top-to-bottom).
+     - `row`: 12-month horizontal calendar grid (side-by-side) with 4 full columns per month (`Giorno`, `Lu-Do`, `Festività`, `Farmacie di Turno`).
+   - Supports `--first-day-of-the-week` (`--fdotw`): Configures the weekly shift start day (`monday`, `saturday`, `sunday`, or `0..6`).
+   - Supports `--csv-map-pharmacies`: Maps numeric pharmacy IDs to custom names (e.g. `1` -> `BUCCARELLI`).
+4. **Validation & Comparison Tools**:
+   - `validate_csv.py`: Validates CSV schedules against all ASP domain rules.
+   - `compare_csv.py`: Compares two CSV schedule files side-by-side.

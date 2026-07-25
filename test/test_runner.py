@@ -33,5 +33,15 @@ class TestRunner(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('invalid choice', result.stderr)
 
+    def test_parse_week_param_now(self):
+        from runner_core import parse_week_param, get_week_number_for_date
+        from datetime import date
+        today = date.today()
+        expected_week = get_week_number_for_date(today, 2026, 'monday')
+        parsed = parse_week_param('now', year=2026, first_day_of_week='monday')
+        self.assertEqual(parsed, expected_week)
+        self.assertEqual(parse_week_param('15'), 15)
+        self.assertIsNone(parse_week_param(None))
+
 if __name__ == '__main__':
     unittest.main()

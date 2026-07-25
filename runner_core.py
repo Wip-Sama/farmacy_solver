@@ -9,6 +9,37 @@ import subprocess
 from datetime import date, datetime, timedelta
 from collections import defaultdict
 
+def parse_week_param(val: int | str | None, year: int = 2025, first_day_of_week: int | str = 0) -> int | None:
+    """
+    Parses a week parameter that can be an integer, numeric string, or 'now'.
+    Returns an integer week number or None.
+    """
+    if val is None:
+        return None
+    
+    val_str = str(val).strip().lower()
+    if not val_str:
+        return None
+
+    if val_str == 'now':
+        today = date.today()
+        if today.year == year:
+            target_date = today
+        else:
+            try:
+                target_date = date(year, today.month, today.day)
+            except ValueError:
+                target_date = date(year, today.month, 28)
+        
+        week_num = get_week_number_for_date(target_date, year, first_day_of_week)
+        logging.info(f"Resolved 'now' ({target_date.isoformat()}) for year {year} to week {week_num}.")
+        return week_num
+
+    try:
+        return int(val_str)
+    except ValueError:
+        raise ValueError(f"Invalid week specification '{val}'. Expected an integer or 'now'.")
+
 def get_easter_date(year: int) -> date:
     """Calculates Easter Sunday using the Anonymous Gregorian algorithm."""
     a = year % 19
@@ -81,65 +112,99 @@ def parse_festivities(festivities_args: list | None, auto_festivities: bool, yea
 
     return festivities_dict
 
+def parse_first_day_of_week(val) -> int:
+    """Normalizes day name or int into 0..6 (0=Monday, 5=Saturday, 6=Sunday)."""
+    if val is None:
+        return 0
+    if isinstance(val, int) and 0 <= val <= 6:
+        return val
+    s = str(val).strip().lower()
+    mapping = {
+        'monday': 0, 'mon': 0, 'lunedi': 0, 'lunedì': 0, '0': 0,
+        'tuesday': 1, 'tue': 1, 'martedi': 1, 'martedì': 1, '1': 1,
+        'wednesday': 2, 'wed': 2, 'mercoledi': 2, 'mercoledì': 2, '2': 2,
+        'thursday': 3, 'thu': 3, 'giovedi': 3, 'giovedì': 3, '3': 3,
+        'friday': 4, 'fri': 4, 'venerdi': 4, 'veneredì': 4, '4': 4,
+        'saturday': 5, 'sat': 5, 'sabato': 5, '5': 5,
+        'sunday': 6, 'sun': 6, 'domenica': 6, '6': 6,
+    }
+    return mapping.get(s, 0)
+
+def get_week_start_date(week_number: int, year: int = 2025, first_day_of_week: int | str = 0) -> date:
+    """Calculates the start date for a given week number in a year given first_day_of_week."""
+    start_dow = parse_first_day_of_week(first_day_of_week)
+    jan1 = date(year, 1, 1)
+    if start_dow == 0:
+        if jan1.weekday() != 0:
+            jan1 += timedelta(days=(7 - jan1.weekday()))
+        return jan1 + timedelta(weeks=week_number - 1)
+    
+    if jan1.weekday() == start_dow:
+        return jan1 + timedelta(weeks=week_number - 1)
+    else:
+        diff = (start_dow - jan1.weekday()) % 7
+        first_full_start = jan1 + timedelta(days=diff)
+        if week_number == 1:
+            return jan1
+        else:
+            return first_full_start + timedelta(weeks=week_number - 2)
+
 def get_week_monday(week_number: int, year: int = 2025) -> date:
     """Calculates the Monday date for a given week number in a year."""
-    d = date(year, 1, 1)
-    if d.weekday() != 0:
-        d += timedelta(days=(7 - d.weekday()))
-    return d + timedelta(weeks=week_number - 1)
+    return get_week_start_date(week_number, year, 0)
 
-def get_week_number_for_date(d: date, year: int = 2025) -> int:
+def get_week_number_for_date(d: date, year: int = 2025, first_day_of_week: int | str = 0) -> int:
     """Finds which schedule week number a date belongs to."""
-    first_monday = get_week_monday(1, year)
-    delta_days = (d - first_monday).days
-    if delta_days < 0:
-        return 1
-    return (delta_days // 7) + 1
+    start_dow = parse_first_day_of_week(first_day_of_week)
+    jan1 = date(year, 1, 1)
+    if start_dow == 0:
+        first_monday = get_week_start_date(1, year, 0)
+        delta_days = (d - first_monday).days
+        if delta_days < 0:
+            return 1
+        return (delta_days // 7) + 1
 
-def parse_prev_year_csv(csv_path: str) -> set:
+    if jan1.weekday() == start_dow:
+        delta_days = (d - jan1).days
+        if delta_days < 0:
+            return 1
+        return (delta_days // 7) + 1
+    else:
+        diff = (start_dow - jan1.weekday()) % 7
+        first_full_start = jan1 + timedelta(days=diff)
+        if d < first_full_start:
+            return 1
+        else:
+            return 2 + ((d - first_full_start).days // 7)
+
+def extract_pharmacy_ids(farmacie_str, pharmacy_name_to_id=None):
+    """Extracts integer pharmacy IDs from strings like '1-2', 'F1-F2', or 'BUCCARELLI-SANMICHELE'."""
+    ids = set()
+    if not farmacie_str:
+        return ids
+    tokens = re.split(r'[-/,\s]+', farmacie_str.strip())
+    for t in tokens:
+        if not t:
+            continue
+        if t.isdigit():
+            ids.add(int(t))
+        elif t.lower().startswith('f') and t[1:].isdigit():
+            ids.add(int(t[1:]))
+        elif pharmacy_name_to_id and t.lower() in pharmacy_name_to_id:
+            ids.add(pharmacy_name_to_id[t.lower()])
+    return ids
+
+
+def parse_prev_year_csv(csv_path: str) -> set[tuple[str, int]]:
     """
     Parses a previous year CSV to extract past festivity assignments.
-    Returns a set of tuples: (festivity_name_lower, farmacia_id)
+    Returns a set of tuples: (festivity_name_lower, farmacia_id).
+    Supports metadata rows, vertical (normal/compact/tiny/extended) and horizontal (row direction) CSVs.
     """
-    past_festivities = set()
-    if not csv_path or not os.path.exists(csv_path):
-        return past_festivities
-
-    try:
-        with open(csv_path, mode='r', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            headers = next(reader, None)
-            if not headers:
-                return past_festivities
-            
-            headers_lower = [h.strip().lower() for h in headers]
-            fest_col_idx = None
-            for name in ['festività', 'festivita', 'festivities', 'festivity']:
-                if name in headers_lower:
-                    fest_col_idx = headers_lower.index(name)
-                    break
-            
-            if fest_col_idx is None:
-                return past_festivities
-
-            farmacia_cols = {}
-            for idx, h in enumerate(headers_lower):
-                if h.startswith('f') and h[1:].isdigit():
-                    farmacia_cols[int(h[1:])] = idx
-
-            for row in reader:
-                if not row or len(row) <= fest_col_idx:
-                    continue
-                fest_name = row[fest_col_idx].strip()
-                if fest_name:
-                    fest_name_clean = fest_name.lower()
-                    for f_id, col_idx in farmacia_cols.items():
-                        if col_idx < len(row) and row[col_idx].strip() == "1":
-                            past_festivities.add((fest_name_clean, f_id))
-    except Exception as e:
-        logging.warning(f"Could not parse previous year CSV '{csv_path}': {e}")
-
+    from csv_utils import read_csv_schedule
+    _, _, _, past_festivities, _ = read_csv_schedule(csv_path)
     return past_festivities
+
 
 def generate_dynamic_constraints(
     reschedule_csv: str | None,
@@ -149,13 +214,24 @@ def generate_dynamic_constraints(
     start_week: int,
     end_week: int,
     festivities_dict: dict | None = None,
-    prev_year_csv: str | None = None
+    prev_year_csv: str | None = None,
+    first_day_of_week: int | str = 0,
+    year: int = 2025
 ) -> str:
     """
-    Generates dynamic ASP rules in a temporary file for week limits, rescheduling, unavailabilities, and festivities.
+    Generates dynamic ASP rules in a temporary file for week limits, rescheduling, unavailabilities, festivities, and dynamic summer period.
     """
     lines = []
     actual_start_week = start_week
+
+    # Dynamic summer facts for June 15 - Sept 15
+    sum_start_date = date(year, 6, 15)
+    sum_end_date = date(year, 9, 15)
+    sum_start_w = get_week_number_for_date(sum_start_date, year, first_day_of_week)
+    sum_end_w = get_week_number_for_date(sum_end_date, year, first_day_of_week)
+    lines.append(f"% Dynamic summer period facts for {year} (June 15 - Sept 15)\n")
+    lines.append(f"estate({sum_start_w}..{sum_end_w}).\n")
+    lines.append("inverno(W) :- settimana(W), not estate(W).\n\n")
 
     if reschedule_csv and reschedule_from:
         actual_start_week = 1
@@ -163,7 +239,12 @@ def generate_dynamic_constraints(
         try:
             with open(reschedule_csv, mode='r', encoding='utf-8') as file:
                 reader = csv.reader(file)
-                headers = next(reader, None)
+                headers = None
+                for row in reader:
+                    if row and not row[0].startswith('#'):
+                        headers = row
+                        break
+
                 headers_lower = [h.strip().lower() for h in headers] if headers else []
                 fest_col_idx = None
                 for name in ['festività', 'festivita', 'festivities', 'festivity']:
@@ -172,21 +253,15 @@ def generate_dynamic_constraints(
                         break
 
                 for row in reader:
-                    if not row or len(row) < 12:
+                    if not row or row[0].startswith('#') or len(row) < 4:
                         continue
                     try:
                         week = int(row[0])
                         if week < reschedule_from:
-                            is_festivity_row = fest_col_idx is not None and len(row) > fest_col_idx and bool(row[fest_col_idx].strip())
-                            fest_name = row[fest_col_idx].strip().lower() if is_festivity_row else None
-                            
                             for i in range(1, 11):
                                 col_idx = i + 1 if fest_col_idx is None else (i + 2 if fest_col_idx == 2 else i + 1)
                                 if col_idx < len(row) and row[col_idx].strip() == "1":
-                                    if is_festivity_row and fest_name:
-                                        lines.append(f'past_turno_festivo("{fest_name}", {i}).\n')
-                                    else:
-                                        lines.append(f"past_turno({week}, {i}).\n")
+                                    lines.append(f"past_turno({week}, {i}).\n")
                     except ValueError:
                         continue
         except Exception as e:
@@ -196,7 +271,6 @@ def generate_dynamic_constraints(
         lines.append("% Lock past weeks\n")
         lines.append(":- past_turno(S, F), not turno(S, F).\n")
         lines.append(":- turno(S, F), S < START_WEEK, not past_turno(S, F), reschedule_from(START_WEEK).\n")
-        lines.append(":- past_turno_festivo(N, F), not turno_festivo(N, F).\n")
 
     if unavailables:
         for u in unavailables:
@@ -221,15 +295,13 @@ def generate_dynamic_constraints(
         midweek_festivities = []
         for fest_date, fest_name in festivities_dict.items():
             if fest_date.weekday() < 5:  # Monday to Friday
-                w_num = get_week_number_for_date(fest_date, fest_date.year)
+                w_num = get_week_number_for_date(fest_date, fest_date.year, first_day_of_week)
                 midweek_festivities.append((fest_name.lower(), w_num))
 
         if midweek_festivities:
-            lines.append("\n% Mid-week Festivities facts and choice rules\n")
+            lines.append("\n% Mid-week Festivities facts\n")
             for name, w in midweek_festivities:
                 lines.append(f'festivita("{name}", {w}).\n')
-
-            lines.append('{ turno_festivo(N, F) : farmacia(F) } :- festivita(N, S).\n')
 
         # Previous year festivity history
         if prev_year_csv:

@@ -59,8 +59,7 @@ Se viene specificato `--start-week 20` senza rischedulazione, viene generato `se
 Quando vengono forniti `--reschedule-csv <file>` e `--reschedule-from <SETTIMANA>`:
 1. Python legge `<file>` ed estrae i turni delle settimane precedenti a `<SETTIMANA>`.
 2. Genera i fatti `past_turno(Settimana, Farmacia).`.
-3. Se esistono turni festivi passati, genera i fatti `past_turno_festivo(NomeFestivita, Farmacia).`.
-4. Genera i vincoli di blocco:
+3. Genera i vincoli di blocco:
 
 ```asp
 reschedule_from(20).
@@ -72,9 +71,6 @@ past_turno(1, 3).
 
 :- past_turno(S, F), not turno(S, F).
 :- turno(S, F), S < START_WEEK, not past_turno(S, F), reschedule_from(START_WEEK).
-
-% Blocco dei turni festivi passati
-:- past_turno_festivo(N, F), not turno_festivo(N, F).
 ```
 
 ---
@@ -92,31 +88,28 @@ Quando vengono passati `--unavailable <F,W>` o `--unavailable-interval <F,W1,W2>
 
 ---
 
-### 2.4 Generazione delle Festività (`festivita`, `turno_festivo`, `past_festivita`)
+### 2.4 Generazione delle Festività (`festivita`, `past_festivita`)
 
 Quando viene abilitato `--auto-festivities` o `--festivities`:
 
 1. **Mappatura Date-Settimana**:
    Python calcola le date esatte delle festività italiane dell'anno (es. Capodanno, Pasquetta, Liberazione, Natale, ecc.) o converte le date personalizzate fornite dall'utente.
 2. **Esclusione dei Fine Settimana**:
-   - Le festività che cadono di sabato o domenica **non** attivano lo swap delle farmacie (sono coperte dal normale turno del weekend). Python ne registra il nome ai soli fini dell'etichettatura nel CSV.
-   - Le festività che cadono dal lunedì al venerdì attivano un turno festivo dedicato in ASP.
-3. **Fatti Dinamici e Regole di Guess ASP**:
+   - Le festività che cadono di sabato o domenica **non** attivano i fatti festività in ASP (sono coperte dal normale turno del weekend senza controlli sullo storico dell'anno precedente). Python ne registra il nome ai soli fini dell'etichettatura nel CSV.
+   - Le festività che cadono dal lunedì al venerdì attivano un fatto festività in ASP senza spezzare la settimana né scambiare le farmacie.
+3. **Fatti Dinamici ASP**:
    Per ogni festività infrasettimanale, Python genera:
    ```asp
    festivita("natale", 52).
-
-   % Regola di scelta: genera l'assegnazione per le festività infrasettimanali attive
-   { turno_festivo(N, F) : farmacia(F) } :- festivita(N, S).
    ```
 4. **Continuità Storica (`--prev-year`)**:
    Quando viene specificato `--prev-year <file_csv>`, Python analizza i turni festivi dell'anno precedente e genera i fatti storici:
    ```asp
    past_festivita("natale", 3). % La farmacia 3 ha fatto Natale l'anno scorso
    ```
-   Il vincolo in `asp/constraints.lp` impedisce la ripetizione:
+   Il vincolo in `asp/constraints.lp` impedisce alla stessa farmacia di essere assegnata al turno settimanale di quella festività:
    ```asp
-   :- turno_festivo(N, F), past_festivita(N, F).
+   :- festivita(N, S), turno(S, F), past_festivita(N, F).
    ```
 
 ---
@@ -127,11 +120,10 @@ Quando viene abilitato `--auto-festivities` o `--festivities`:
 I file di guess (`asp/guess_choice.lp` e `asp/guess_or.lp`) contengono le direttive di output per garantire che Clingo/DLV restituiscano i simboli desiderati:
 ```asp
 #show turno/2.
-#show turno_festivo/2.
 ```
 
 ### 3.2 Regole di Vincolo ASP (`asp/constraints.lp`)
-Il file dei vincoli statici applica le regole sia ai turni settimanali ordinari sia ai turni festivi:
+Il file dei vincoli statici applica le regole per i turni settimanali e il controllo storico delle festività:
 
 ```asp
 % Vincoli dei turni settimanali ordinari
@@ -141,15 +133,8 @@ Il file dei vincoli statici applica le regole sia ai turni settimanali ordinari 
 :- settimana(S), inverno(S), #count { F : turno(S, F), zona(F, centro) } < 1.
 :- turno(S, F1), turno(S, F2), zona(F1, marina), zona(F2, marina), F1 != F2.
 
-% Vincoli dei turni festivi
-:- festivita(N, S), #count { F : turno(S, F) } = K, #count { F : turno_festivo(N, F) } != K.
-:- festivita(N, S), turno_festivo(N, F), turno(S, F).
-:- festivita(N, S), turno_festivo(N, F), turno(S-1, F), settimana(S-1).
-:- festivita(N, S), turno_festivo(N, F), turno(S+1, F), settimana(S+1).
-:- turno_festivo(N, F), past_festivita(N, F).
-:- festivita(N, S), estate(S), #count { F : turno_festivo(N, F), zona(F, marina) } < 1.
-:- festivita(N, S), inverno(S), #count { F : turno_festivo(N, F), zona(F, centro) } < 1.
-:- festivita(N, S), turno_festivo(N, F1), turno_festivo(N, F2), zona(F1, marina), zona(F2, marina), F1 != F2.
+% Vincolo di Continuità Storica per le Festività
+:- festivita(N, S), turno(S, F), past_festivita(N, F).
 ```
 
 ---
@@ -160,10 +145,19 @@ Dopo che il solver restituisce un answer set:
 
 1. **Parsing dei Simboli (`parse_schedule`)**:
    - `turno(Settimana, Farmacia)` -> salvato in `schedule[Settimana]`
-   - `turno_festivo(NomeFestivita, Farmacia)` -> salvato in `festivo_schedule[NomeFestivita]`
-2. **Segmentazione Date ed Esportazione CSV (`generate_csv_report`)**:
-   - Per ogni settimana, Python valuta i 7 giorni (da Lunedì a Domenica).
-   - Se un giorno è una festività infrasettimanale, le farmacie vengono recuperate da `festivo_schedule`.
-   - Se un giorno è ordinario o una festività del weekend, le farmacie vengono recuperate da `schedule[Settimana]`.
-   - I giorni consecutivi con identiche assegnazioni e festività vengono raggruppati in una singola riga del CSV.
-   - La colonna `Festività` viene popolata con il nome della festività.
+2. **Prima Riga con Intestazione Metadati**:
+   - Scrive `# Metadata: Year=... | Solver=... | Time=... | Mode=... | Direction=... | Mappings=...` sulla prima riga del file CSV.
+3. **Generazione Report CSV Flessibile (`csv_utils.generate_csv_report`)**:
+   - Supporta `--csv-mode`:
+     - `compact`: 1 riga per settimana (senza spezzare le festività) con colonne farmacia complete (`F1`..`F10` o nomi mappati).
+     - `tiny`: 1 riga per settimana con colonna sintetica (`Farmacie di Turno`).
+     - `normal`: Giorni consecutivi raggruppati, spezzando le righe nei giorni festivi.
+     - `extended`: 365/366 righe giornaliere con giorno della settimana (L..D) e festività.
+   - Supporta `--csv-direction`:
+     - `column`: Layout verticale (righe dall'alto verso il basso).
+     - `row`: Griglia orizzontale a 12 mesi affiancati con 4 colonne per mese (`Giorno`, `Lu-Do`, `Festività`, `Farmacie di Turno`).
+   - Supporta `--first-day-of-the-week` (`--fdotw`): Configura il giorno di inizio del turno settimanale (`monday`, `saturday`, `sunday`, oppure `0..6`).
+   - Supporta `--csv-map-pharmacies`: Mappa gli ID numerici delle farmacie con nomi personalizzati (es. `1` -> `BUCCARELLI`).
+4. **Strumenti di Validazione e Confronto**:
+   - `validate_csv.py`: Valida i calendari CSV rispetto a tutte le regole ASP.
+   - `compare_csv.py`: Confronta affiancati due file di calendario CSV.

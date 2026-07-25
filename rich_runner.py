@@ -63,10 +63,7 @@ def generate_output_tables(schedule, year, cost_value=None, elapsed_time=None, i
             day_date = monday_date + timedelta(days=day_idx)
             fest_name = fest_dict.get(day_date, "")
             
-            if fest_name and day_idx < 5:  # mid-week festivity
-                f_assigned = set(festivo_sched.get(fest_name.lower(), schedule[week]))
-            else:
-                f_assigned = set(schedule[week])
+            f_assigned = set(schedule[week])
 
             days_details.append((day_date, fest_name, f_assigned))
 
@@ -215,16 +212,20 @@ def main(
     time_limit: Annotated[Optional[int], typer.Option(help="Time limit for the solver in seconds")] = None,
     live: Annotated[bool, typer.Option(help="Print live the latest found solution as it is discovered")] = False,
     csv_file: Annotated[Optional[str], typer.Option("--csv", help="Generate a CSV report to the specified file")] = None,
+    csv_mode: Annotated[str, typer.Option(help="CSV mode: compact (full cols), normal, tiny (condensed col), extended")] = "normal",
+    csv_direction: Annotated[str, typer.Option(help="CSV direction: column, row")] = "column",
+    csv_map_pharmacies: Annotated[Optional[str], typer.Option(help="Pharmacy name mapping (e.g. '1,BUCCARELLI;2,SANMICHELE')")] = None,
+    first_day_of_week: Annotated[str, typer.Option("--first-day-of-the-week", "--fdotw", help="First day of the week (monday, saturday, sunday, 0..6)")] = "monday",
     reschedule_csv: Annotated[Optional[str], typer.Option(help="Path to the CSV file of a previous run")] = None,
-    reschedule_from: Annotated[Optional[int], typer.Option(help="Week number from which to reschedule")] = None,
+    reschedule_from: Annotated[Optional[str], typer.Option(help="Week number from which to reschedule (number or 'now')")] = None,
     unavailable: Annotated[Optional[List[str]], typer.Option(help="List of unavailable pharmacies (e.g., 3,15 4,16)")] = None,
     unavailable_interval: Annotated[Optional[List[str]], typer.Option(help="List of unavailable intervals (e.g., 3,15,18)")] = None,
     festivities: Annotated[Optional[List[str]], typer.Option(help="Custom festivities in format 'name,start_date,finish_date' or 'name,date'")] = None,
     auto_festivities: Annotated[bool, typer.Option(help="Automatically generate Italian national festivities for the year")] = False,
     prev_year: Annotated[Optional[str], typer.Option(help="Path to previous year's CSV schedule")] = None,
     year: Annotated[int, typer.Option(help="L'anno per cui si vuole generare il calendario")] = 2025,
-    start_week: Annotated[int, typer.Option(help="Settimana di inizio per la schedulazione")] = 1,
-    end_week: Annotated[Optional[int], typer.Option(help="Settimana di fine per la schedulazione")] = None,
+    start_week: Annotated[str, typer.Option(help="Settimana di inizio per la schedulazione (numero o 'now')")] = "1",
+    end_week: Annotated[Optional[str], typer.Option(help="Settimana di fine per la schedulazione (numero o 'now')")] = None,
     solver: Annotated[SolverType, typer.Option(help="Solver to use")] = SolverType.clingo
 ):
     optimizations = os.path.join("asp", "optimizations")
@@ -255,14 +256,25 @@ def main(
         raise typer.Exit(code=1)
 
     total_weeks = date(year, 12, 28).isocalendar()[1]
-    final_end_week = end_week if end_week is not None else total_weeks
+
+    from runner_core import parse_week_param
+    start_week_num = parse_week_param(start_week, year, first_day_of_week) or 1
+    final_end_week = parse_week_param(end_week, year, first_day_of_week) or total_weeks
+    reschedule_from_num = parse_week_param(reschedule_from, year, first_day_of_week)
+
+    if reschedule_csv:
+        if reschedule_from_num is None:
+            if start_week_num > 1:
+                reschedule_from_num = start_week_num
+            else:
+                reschedule_from_num = 1
     
-    if start_week > total_weeks:
-        console.print(f"[red]Error: --start-week {start_week} is greater than the total number of weeks in year {year} ({total_weeks}).[/red]")
+    if start_week_num > total_weeks:
+        console.print(f"[red]Error: --start-week {start_week_num} is greater than the total number of weeks in year {year} ({total_weeks}).[/red]")
         raise typer.Exit(code=1)
         
-    if start_week > final_end_week:
-        console.print(f"[red]Error: --start-week {start_week} cannot be greater than --end-week {final_end_week}.[/red]")
+    if start_week_num > final_end_week:
+        console.print(f"[red]Error: --start-week {start_week_num} cannot be greater than --end-week {final_end_week}.[/red]")
         raise typer.Exit(code=1)
 
     festivities_dict = parse_festivities(festivities, auto_festivities, year)
@@ -270,11 +282,13 @@ def main(
     dynamic_file = None
     try:
         dynamic_file = generate_dynamic_constraints(
-            reschedule_csv, reschedule_from, 
+            reschedule_csv, reschedule_from_num, 
             unavailable, unavailable_interval,
-            start_week, final_end_week,
+            start_week_num, final_end_week,
             festivities_dict=festivities_dict,
-            prev_year_csv=prev_year
+            prev_year_csv=prev_year,
+            first_day_of_week=first_day_of_week,
+            year=year
         )
 
         start_time = time.time()
@@ -318,7 +332,11 @@ def main(
             }
             if os.path.dirname(csv_file):
                 os.makedirs(os.path.dirname(csv_file), exist_ok=True)
-            generate_csv_report(schedule, csv_file, run_info, year, festivo_schedule=festivo_schedule, festivities_dict=festivities_dict)
+            generate_csv_report(
+                schedule, csv_file, run_info, year, festivo_schedule=festivo_schedule, festivities_dict=festivities_dict,
+                csv_mode=csv_mode, csv_direction=csv_direction, csv_map_pharmacies=csv_map_pharmacies,
+                first_day_of_week=first_day_of_week
+            )
 
     finally:
         if dynamic_file and os.path.exists(dynamic_file):
