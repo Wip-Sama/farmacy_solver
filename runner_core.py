@@ -236,39 +236,19 @@ def generate_dynamic_constraints(
     if reschedule_csv and reschedule_from:
         actual_start_week = 1
         lines.append(f"reschedule_from({reschedule_from}).\n")
+        lines.append("past_week(S) :- reschedule_from(START), settimana(S), S < START.\n\n")
         try:
-            with open(reschedule_csv, mode='r', encoding='utf-8') as file:
-                reader = csv.reader(file)
-                headers = None
-                for row in reader:
-                    if row and not row[0].startswith('#'):
-                        headers = row
-                        break
-
-                headers_lower = [h.strip().lower() for h in headers] if headers else []
-                fest_col_idx = None
-                for name in ['festività', 'festivita', 'festivities', 'festivity']:
-                    if name in headers_lower:
-                        fest_col_idx = headers_lower.index(name)
-                        break
-
-                for row in reader:
-                    if not row or row[0].startswith('#') or len(row) < 4:
-                        continue
-                    try:
-                        week = int(row[0])
-                        if week < reschedule_from:
-                            for i in range(1, 11):
-                                col_idx = i + 1 if fest_col_idx is None else (i + 2 if fest_col_idx == 2 else i + 1)
-                                if col_idx < len(row) and row[col_idx].strip() == "1":
-                                    lines.append(f"past_turno({week}, {i}).\n")
-                    except ValueError:
-                        continue
+            from csv_utils import read_csv_schedule
+            res_sched, _, _, _, _ = read_csv_schedule(reschedule_csv)
+            for week, f_set in res_sched.items():
+                if week < reschedule_from:
+                    for f_id in f_set:
+                        lines.append(f"past_turno({week}, {f_id}).\n")
         except Exception as e:
             logging.error(f"Failed to read CSV file {reschedule_csv}: {e}")
             sys.exit(1)
 
-        lines.append("% Lock past weeks\n")
+        lines.append("\n% Lock past weeks\n")
         lines.append(":- past_turno(S, F), not turno(S, F).\n")
         lines.append(":- turno(S, F), S < START_WEEK, not past_turno(S, F), reschedule_from(START_WEEK).\n")
 
@@ -303,13 +283,13 @@ def generate_dynamic_constraints(
             for name, w in midweek_festivities:
                 lines.append(f'festivita("{name}", {w}).\n')
 
-        # Previous year festivity history
-        if prev_year_csv:
-            past_fest_set = parse_prev_year_csv(prev_year_csv)
-            if past_fest_set:
-                lines.append("\n% Previous year festivity history\n")
-                for name, f_id in past_fest_set:
-                    lines.append(f'past_festivita("{name}", {f_id}).\n')
+    # Previous year festivity history
+    if prev_year_csv:
+        past_fest_set = parse_prev_year_csv(prev_year_csv)
+        if past_fest_set:
+            lines.append("\n% Previous year festivity history\n")
+            for name, f_id in past_fest_set:
+                lines.append(f'past_festivita("{name}", {f_id}).\n')
 
     lines.insert(0, f"settimana({actual_start_week}..{end_week}).\n")
 
