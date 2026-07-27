@@ -1,0 +1,62 @@
+import sys
+import os
+import unittest
+import json
+import tempfile
+from fastapi.testclient import TestClient
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from backend.main import app
+from backend.services.storage import get_settings, save_settings
+from backend.services.job_manager import job_manager
+from backend.schemas.settings import SettingsSchema
+
+class TestAPIEndpoints(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+
+    def test_root_endpoint(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "running")
+
+    def test_get_and_put_settings(self):
+        # GET Settings
+        res_get = self.client.get("/api/settings")
+        self.assertEqual(res_get.status_code, 200)
+        settings_data = res_get.json()
+        self.assertIn("year", settings_data)
+
+        # PUT Settings
+        settings_data["time_limit"] = 45
+        res_put = self.client.put("/api/settings", json=settings_data)
+        self.assertEqual(res_put.status_code, 200)
+        updated = res_put.json()
+        self.assertEqual(updated["time_limit"], 45)
+
+    def test_list_schedules(self):
+        res = self.client.get("/api/schedules")
+        self.assertEqual(res.status_code, 200)
+        self.assertIsInstance(res.json(), list)
+
+    def test_fetch_schedule_rows(self):
+        res = self.client.get("/api/schedules/2026?mode=compact")
+        self.assertEqual(res.status_code, 200)
+        self.assertIsInstance(res.json(), list)
+
+    def test_single_job_concurrency_lock(self):
+        # Simulate an already running solver job
+        job_manager.is_running = True
+        job_manager.current_job_id = "test_running_job"
+        try:
+            res = self.client.post("/api/schedules/generate", json={"year": 2026, "time_limit": 10})
+            self.assertEqual(res.status_code, 409)
+            self.assertIn("already running", res.json()["detail"])
+        finally:
+            job_manager.is_running = False
+            job_manager.current_job_id = None
+
+if __name__ == "__main__":
+    unittest.main()

@@ -12,6 +12,7 @@ The system uses a 3-tier hybrid architecture:
 +-------------------------------------------------------------------+
 |               Vue 3 + Tailwind CSS v4 Frontend                    |
 |  - TopControls, FestivitiesTable, PreferencesTable, ScheduleView |
+|  - Toast Notification Indicator (vue-sonner) during scheduling    |
 |  - Pinia Stores with Zero-Polling WebSocket Synchronization       |
 +---------------------------------+---------------------------------+
                                   |

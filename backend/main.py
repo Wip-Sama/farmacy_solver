@@ -1,0 +1,55 @@
+import os
+import sys
+import logging
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from core.config import APP_CONFIG
+from backend.api.routes import router as api_router
+from backend.api.ws import router as ws_router
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+app = FastAPI(
+    title="Pharmacy Solver API",
+    description="REST & Real-Time WebSocket API for ASP Pharmacy Scheduling",
+    version="1.0.0"
+)
+
+# Configure CORS
+frontend_port = APP_CONFIG.get("server", {}).get("frontend_port", 5173)
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    f"http://localhost:{frontend_port}",
+    f"http://127.0.0.1:{frontend_port}",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all for local dev
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Register routers
+app.include_router(api_router, prefix="/api")
+app.include_router(ws_router, prefix="/api")
+
+@app.get("/")
+async def root():
+    return {
+        "app": "Pharmacy Scheduling Solver API",
+        "status": "running",
+        "docs": "/docs",
+        "ws": "/api/ws"
+    }
+
+if __name__ == "__main__":
+    import uvicorn
+    host = APP_CONFIG.get("server", {}).get("host", "127.0.0.1")
+    port = APP_CONFIG.get("server", {}).get("backend_port", 8000)
+    reload = APP_CONFIG.get("server", {}).get("reload", True)
+    uvicorn.run("backend.main:app", host=host, port=port, reload=reload)

@@ -1,0 +1,10 @@
+{
+  "year": 2026,
+  "use_previous_year": true,
+  "first_day_of_week": "sunday",
+  "auto_festivities": true,
+  "time_limit": 45,
+  "regenerate_from": null,
+  "custom_festivities": [],
+  "pharmacy_preferences": []
+}
