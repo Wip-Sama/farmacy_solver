@@ -21,9 +21,10 @@ import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import FestivitiesTable from '@/components/FestivitiesTable.vue'
 import PharmaciesTable from '@/components/PharmaciesTable.vue'
-import { Settings, ChevronUp, ChevronDown } from 'lucide-vue-next'
+import { Settings, ChevronUp, ChevronDown, Save } from 'lucide-vue-next'
 
 const store = useAppStore()
+const daysOfWeek = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 
 function incrementTimeLimit() {
   store.updateSettings({ time_limit: store.settings.time_limit + 10 })
@@ -33,6 +34,11 @@ function decrementTimeLimit() {
   if (store.settings.time_limit > 10) {
     store.updateSettings({ time_limit: store.settings.time_limit - 10 })
   }
+}
+
+async function handleSaveSettings() {
+  await store.saveCurrentSettings()
+  store.isSettingsOpen = false
 }
 </script>
 
@@ -68,8 +74,8 @@ function decrementTimeLimit() {
             <Label for="settings-use-prev-year" class="text-xs font-medium cursor-pointer">Use previous year</Label>
             <Switch
               id="settings-use-prev-year"
-              :checked="store.settings.use_previous_year"
-              @update:checked="(val: boolean) => store.updateSettings({ use_previous_year: val })"
+              :model-value="store.settings.use_previous_year"
+              @update:model-value="(val: boolean) => store.updateSettings({ use_previous_year: val })"
             />
           </div>
 
@@ -80,13 +86,13 @@ function decrementTimeLimit() {
               :model-value="store.settings.first_day_of_week"
               @update:model-value="(val: any) => store.updateSettings({ first_day_of_week: String(val) })"
             >
-              <SelectTrigger class="h-8 text-xs w-32">
+              <SelectTrigger class="h-8 text-xs w-32 capitalize">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="sunday">sunday</SelectItem>
-                <SelectItem value="monday">monday</SelectItem>
-                <SelectItem value="saturday">saturday</SelectItem>
+                <SelectItem v-for="d in daysOfWeek" :key="d" :value="d" class="capitalize">
+                  {{ d }}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -96,8 +102,8 @@ function decrementTimeLimit() {
             <Label for="settings-auto-fest" class="text-xs font-medium cursor-pointer">Auto festivities</Label>
             <Switch
               id="settings-auto-fest"
-              :checked="store.settings.auto_festivities"
-              @update:checked="(val: boolean) => store.updateSettings({ auto_festivities: val })"
+              :model-value="store.settings.auto_festivities"
+              @update:model-value="(val: boolean) => store.updateSettings({ auto_festivities: val })"
             />
           </div>
 
@@ -121,9 +127,13 @@ function decrementTimeLimit() {
 
       <Separator class="bg-border/30" />
 
-      <DialogFooter class="p-4">
+      <DialogFooter class="p-4 gap-2">
         <Button variant="outline" size="sm" @click="store.isSettingsOpen = false">
-          Close Settings
+          Cancel
+        </Button>
+        <Button size="sm" class="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" @click="handleSaveSettings">
+          <Save class="h-4 w-4" />
+          Save Settings
         </Button>
       </DialogFooter>
     </DialogContent>

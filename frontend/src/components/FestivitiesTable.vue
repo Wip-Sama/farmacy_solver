@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useAppStore } from '@/stores/appStore'
+import type { CustomFestivity } from '@/stores/appStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import DayMonthPicker from '@/components/DayMonthPicker.vue'
@@ -14,28 +15,53 @@ import {
 } from '@/components/ui/table'
 import { Plus, Trash2 } from 'lucide-vue-next'
 
+const props = defineProps<{
+  items?: CustomFestivity[]
+  autoFestivities?: boolean
+}>()
+
+const emit = defineEmits<{
+  (e: 'update:items', val: CustomFestivity[]): void
+}>()
+
 const store = useAppStore()
+
+const list = computed<CustomFestivity[]>(() => {
+  return props.items !== undefined ? props.items : store.settings.custom_festivities
+})
+
+const isAutoFest = computed<boolean>(() => {
+  return props.autoFestivities !== undefined ? props.autoFestivities : store.settings.auto_festivities
+})
 
 const newName = ref('')
 const newDate = ref('')
 
+function updateList(newList: CustomFestivity[]) {
+  if (props.items !== undefined) {
+    emit('update:items', newList)
+  } else {
+    store.updateSettings({ custom_festivities: newList })
+  }
+}
+
 function addFestivity() {
   if (!newName.value.trim()) return
-  const updated = [...store.settings.custom_festivities, { name: newName.value.trim(), date: newDate.value }]
-  store.updateSettings({ custom_festivities: updated })
+  const updated = [...list.value, { name: newName.value.trim(), date: newDate.value }]
+  updateList(updated)
   newName.value = ''
   newDate.value = ''
 }
 
 function updateFestivity(index: number, name: string, date: string) {
-  const updated = [...store.settings.custom_festivities]
+  const updated = [...list.value]
   updated[index] = { name, date }
-  store.updateSettings({ custom_festivities: updated })
+  updateList(updated)
 }
 
 function removeFestivity(index: number) {
-  const updated = store.settings.custom_festivities.filter((_: unknown, i: number) => i !== index)
-  store.updateSettings({ custom_festivities: updated })
+  const updated = list.value.filter((_: unknown, i: number) => i !== index)
+  updateList(updated)
 }
 </script>
 
@@ -43,8 +69,8 @@ function removeFestivity(index: number) {
   <div class="space-y-3">
     <div class="flex items-center justify-between">
       <h3 class="text-sm font-semibold text-foreground">Festivities</h3>
-      <span v-if="!store.settings.auto_festivities" class="text-xs text-amber-500 font-medium italic">
-        (Auto festivities OFF - Manual dates active)
+      <span v-if="!isAutoFest" class="text-xs text-amber-500 font-medium italic">
+        (Auto festivities OFF - Manual dates required)
       </span>
     </div>
 
@@ -64,7 +90,16 @@ function removeFestivity(index: number) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          <TableRow v-for="(fest, index) in store.settings.custom_festivities" :key="index" class="border-b border-border/40">
+          <TableRow 
+            v-for="(fest, index) in list" 
+            :key="index" 
+            :class="[
+              'border-b border-border/40 transition-colors',
+              !isAutoFest && (!fest.date || !fest.date.trim()) 
+                ? 'bg-red-500/5 hover:bg-red-500/10' 
+                : ''
+            ]"
+          >
             <TableCell class="p-1.5">
               <Input 
                 :model-value="fest.name"
@@ -77,7 +112,12 @@ function removeFestivity(index: number) {
               <DayMonthPicker 
                 :model-value="fest.date" 
                 @update:model-value="(val: string) => updateFestivity(index, fest.name, val)"
-                class="w-36"
+                :class="[
+                  'w-36 transition-colors',
+                  !isAutoFest && (!fest.date || !fest.date.trim())
+                    ? 'border-red-500 bg-red-500/10 text-red-400 dark:border-red-500 dark:bg-red-950/40 dark:text-red-400 ring-1 ring-red-500/50 font-medium'
+                    : ''
+                ]"
               />
             </TableCell>
             <TableCell class="text-right p-1.5">
@@ -91,7 +131,7 @@ function removeFestivity(index: number) {
               </Button>
             </TableCell>
           </TableRow>
-          <TableRow v-if="store.settings.custom_festivities.length === 0">
+          <TableRow v-if="list.length === 0">
             <TableCell colspan="3" class="text-center text-xs text-muted-foreground italic py-4">
               No custom festivities added.
             </TableCell>

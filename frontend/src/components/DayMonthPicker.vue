@@ -92,7 +92,7 @@ function handleClear(e: Event) {
           >
             <X class="h-3 w-3 text-muted-foreground hover:text-destructive" />
           </span>
-          <CalendarIcon class="h-3.5 w-3.5 text-muted-foreground" />
+          <CalendarIcon class="h-3.5 w-3.5 opacity-75" />
         </div>
       </Button>
     </PopoverTrigger>

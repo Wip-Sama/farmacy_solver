@@ -40,8 +40,8 @@ export interface ScheduleRow {
   status: 'past' | 'current' | 'future'
 }
 
-const API_BASE = 'http://127.0.0.1:8000/api'
-const WS_URL = 'ws://127.0.0.1:8000/api/ws'
+const API_BASE = 'http://127.0.0.1:8001/api'
+const WS_URL = 'ws://127.0.0.1:8001/api/ws'
 
 export const useAppStore = defineStore('app', () => {
   const settings = ref<Settings>({
@@ -52,25 +52,29 @@ export const useAppStore = defineStore('app', () => {
     time_limit: 60,
     regenerate_from: null,
     pharmacies: [
-      { id: 1, name: 'qualcosa', location: 'centro' },
-      { id: 2, name: 'qualcos\'altro', location: 'centro' },
-      { id: 3, name: 'niente', location: 'marina' }
+      { id: 1, name: 'MONTORO', location: 'centro' },
+      { id: 2, name: 'BUCCARELLI', location: 'centro' },
+      { id: 3, name: 'CENTRALE', location: 'centro' },
+      { id: 4, name: 'DE PINO', location: 'centro' },
+      { id: 5, name: 'DAVID', location: 'centro' },
+      { id: 6, name: 'SAN MICHELE', location: 'centro' },
+      { id: 7, name: 'MARCELLINI', location: 'marina' },
+      { id: 8, name: 'PHARMADUO', location: 'marina' },
+      { id: 9, name: 'IORFIDA', location: 'marina' },
+      { id: 10, name: 'SAN LEONARDO', location: 'marina' }
     ],
     custom_festivities: [
-      { name: 'Natale', date: '2026-12-25' },
-      { name: 'Pasqua', date: '2026-04-05' },
-      { name: 'Capodanno', date: '2026-01-01' },
+      { name: 'Capodanno', date: '01/01' },
+      { name: 'Pasqua', date: '05/04' },
+      { name: 'Natale', date: '25/12' }
     ],
-    pharmacy_preferences: [
-      { pharmacy_id: 1, date: '2026-12-25', state: 'Closed' },
-      { pharmacy_id: 2, date: '2026-12-25', state: 'Closed' },
-      { pharmacy_id: 3, date: '2026-12-25', state: 'Closed' },
-    ]
+    pharmacy_preferences: []
   })
 
   const activeTab = ref<'schedules' | 'settings'>('schedules')
   const viewMode = ref<'compact' | 'extended'>('compact')
   const scheduleRows = ref<ScheduleRow[]>([])
+  const availableYears = ref<number[]>([2025, 2026])
   const isJobRunning = ref(false)
   const isProgressModalOpen = ref(false)
   const isSettingsOpen = ref(false)
@@ -102,8 +106,12 @@ export const useAppStore = defineStore('app', () => {
       isProgressModalOpen.value = true
       jobProgressLines.value = [event.payload.message || 'Starting ASP solver job...']
       toast.info(`⚡ Generating schedule for ${event.payload.year}...`, {
-        duration: 100000,
-        id: 'schedule-generating'
+        duration: Infinity,
+        id: 'schedule-generating',
+        action: {
+          label: 'Cancel',
+          onClick: () => cancelJob()
+        }
       })
     } else if (event.type === 'JOB_PROGRESS') {
       if (event.payload.line) {
@@ -115,6 +123,7 @@ export const useAppStore = defineStore('app', () => {
       toast.success(`✅ Schedule for ${event.payload.year} generated successfully!`, {
         description: `Completed in ${event.payload.execution_time_seconds}s`
       })
+      fetchAvailableYears()
       fetchScheduleRows(settings.value.year)
     } else if (event.type === 'JOB_FAILED') {
       isJobRunning.value = false
@@ -122,6 +131,20 @@ export const useAppStore = defineStore('app', () => {
       toast.error(`❌ Scheduling failed for ${event.payload.year}`, {
         description: event.payload.error
       })
+    }
+  }
+
+  async function cancelJob() {
+    try {
+      const res = await fetch(`${API_BASE}/schedules/cancel`, { method: 'POST' })
+      if (res.ok) {
+        toast.dismiss('schedule-generating')
+        toast.info('Job cancellation requested...')
+      } else {
+        toast.error('Failed to cancel job.')
+      }
+    } catch (e) {
+      toast.error('Network error cancelling job.')
     }
   }
 
@@ -134,6 +157,23 @@ export const useAppStore = defineStore('app', () => {
       }
     } catch (e) {
       console.warn('Failed to fetch settings from API, using local defaults:', e)
+    }
+  }
+
+  async function fetchAvailableYears() {
+    try {
+      const res = await fetch(`${API_BASE}/schedules`)
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data) && data.length > 0) {
+          const years = Array.from(new Set(data.map((item: any) => item.year))).sort((a: any, b: any) => a - b) as number[]
+          if (years.length > 0) {
+            availableYears.value = years
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch available schedule years:', e)
     }
   }
 
@@ -150,6 +190,23 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  async function saveCurrentSettings() {
+    try {
+      const res = await fetch(`${API_BASE}/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings.value)
+      })
+      if (res.ok) {
+        toast.success('Settings saved successfully!')
+      } else {
+        toast.error('Failed to save settings to server.')
+      }
+    } catch (e) {
+      toast.error('Network error saving settings.')
+    }
+  }
+
   async function fetchScheduleRows(year: number) {
     try {
       const res = await fetch(`${API_BASE}/schedules/${year}?mode=${viewMode.value}`)
@@ -161,19 +218,31 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  async function triggerGenerate() {
+  async function triggerGenerate(payload?: Record<string, any>) {
     if (isJobRunning.value) return
+
+    const bodyData = {
+      year: settings.value.year,
+      time_limit: settings.value.time_limit,
+      auto_festivities: settings.value.auto_festivities,
+      use_previous_year: settings.value.use_previous_year,
+      first_day_of_week: settings.value.first_day_of_week,
+      ...payload
+    }
+
 
     try {
       const res = await fetch(`${API_BASE}/schedules/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          year: settings.value.year,
-          time_limit: settings.value.time_limit,
-          auto_festivities: settings.value.auto_festivities
-        })
+        body: JSON.stringify(bodyData)
       })
+
+      if (res.status === 400) {
+        const err = await res.json()
+        toast.error('Validation Error: ' + (err.detail || 'Invalid parameters'))
+        return
+      }
 
       if (res.status === 409) {
         toast.warning('⚠️ A scheduling job is already running in another tab.')
@@ -194,6 +263,7 @@ export const useAppStore = defineStore('app', () => {
     activeTab,
     viewMode,
     scheduleRows,
+    availableYears,
     isJobRunning,
     isProgressModalOpen,
     isSettingsOpen,
@@ -203,7 +273,9 @@ export const useAppStore = defineStore('app', () => {
     jobProgressLines,
     wsStatus,
     fetchSettings,
+    fetchAvailableYears,
     updateSettings,
+    saveCurrentSettings,
     fetchScheduleRows,
     triggerGenerate
   }

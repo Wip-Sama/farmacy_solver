@@ -13,9 +13,14 @@ from backend.services.storage import (
     get_schedule_rows,
 )
 from backend.services.job_manager import job_manager, ws_manager
+from backend.services.export_service import generate_schedule_png
+from datetime import datetime, date
 from core.config import SCHEDULES_DIR
+from core.csv_utils import read_csv_schedule, generate_csv_report, parse_first_day_of_week
+from core.runner_core import get_italian_holidays
 
 router = APIRouter()
+
 
 # --- Settings Endpoints ---
 
@@ -53,29 +58,129 @@ async def trigger_schedule_generation(req: ScheduleGenerateRequest):
             detail=f"A scheduling job is already running (Job ID: {job_manager.current_job_id})."
         )
 
+    settings = get_settings()
+    auto_fest = req.auto_festivities if req.auto_festivities is not None else settings.auto_festivities
+    fest_list = req.custom_festivities if req.custom_festivities is not None else settings.custom_festivities
+
+    # Enforce Requirement 3: If auto_festivities is OFF, all festivities must have non-empty dates
+    if not auto_fest:
+        for fest in fest_list:
+            d_val = fest.date.strip() if fest.date else ""
+            if not d_val:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot generate schedule: Festivity '{fest.name}' is missing a date while auto festivities is disabled."
+                )
+
     try:
+        reschedule_bound = req.reschedule_from or req.regenerate_from
+        pref_list = req.pharmacy_preferences if req.pharmacy_preferences is not None else settings.pharmacy_preferences
+        pharm_list = req.custom_pharmacies if req.custom_pharmacies is not None else settings.pharmacies
         job_id = await job_manager.start_job(
             year=req.year,
-            time_limit=req.time_limit or 60,
-            auto_festivities=req.auto_festivities if req.auto_festivities is not None else True,
+            time_limit=req.time_limit if req.time_limit is not None else settings.time_limit,
+            auto_festivities=auto_fest,
             base=req.base or "choice",
-            opt=req.opt or "penalita_esponenziale"
+            opt=req.opt or "penalita_esponenziale",
+            reschedule_from=reschedule_bound,
+            use_previous_year=req.use_previous_year if req.use_previous_year is not None else settings.use_previous_year,
+            first_day_of_week=req.first_day_of_week or settings.first_day_of_week,
+            custom_pharmacies=pharm_list,
+            custom_festivities=fest_list,
+            pharmacy_preferences=pref_list,
         )
         return {"status": "job_started", "job_id": job_id}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/schedules/cancel")
+async def cancel_schedule_generation():
+    """Cancels an ongoing scheduling job if one is running."""
+    cancelled = await job_manager.cancel_current_job()
+    if not cancelled:
+        raise HTTPException(status_code=400, detail="No active scheduling job to cancel.")
+    return {"status": "job_cancelled"}
+
+
 @router.get("/schedules/{year}/export")
-async def export_schedule_csv(year: int):
-    """Downloads the generated CSV schedule for the given year."""
+async def export_schedule(
+    year: int,
+    format: str = "csv",
+    orientation: str = "horizontal",
+    type: str = "normal",
+    pharmacy_label: str = "names"
+):
+    """Downloads the generated CSV or PNG schedule for the given year, formatted according to orientation, type, and pharmacy_label."""
     csv_file = SCHEDULES_DIR / f"schedule_{year}.csv"
     if not csv_file.exists():
         csv_file = SCHEDULES_DIR / f"test_{year}.csv"
     if not csv_file.exists():
         raise HTTPException(status_code=404, detail=f"Schedule file for year {year} not found.")
 
+    settings = get_settings()
+    first_dow = settings.first_day_of_week or "sunday"
+    mode_val = type.lower() if type else "normal"
+    orient_val = orientation.lower() if orientation else "horizontal"
+    label_val = pharmacy_label.lower() if pharmacy_label else "names"
+    pharm_map = {p.id: p.name for p in settings.pharmacies}
+
+    if format.lower() == "png":
+        png_file = SCHEDULES_DIR / f"export_{year}_{mode_val}_{orient_val}_{label_val}.png"
+        rows = get_schedule_rows(year, mode=mode_val)
+        generate_schedule_png(
+            year=year,
+            rows=rows,
+            output_path=str(png_file),
+            mode=mode_val,
+            orientation=orient_val,
+            pharmacy_label=label_val,
+            pharmacy_name_map=pharm_map
+        )
+        return FileResponse(
+            path=str(png_file),
+            filename=f"schedule_{year}_{mode_val}_{orient_val}_{label_val}.png",
+            media_type="image/png"
+        )
+
+    # For CSV Export:
+    csv_direction = "row" if orient_val in ["horizontal", "row"] else "column"
+    schedule, metadata, pharmacy_map, past_festivities, raw_rows = read_csv_schedule(str(csv_file))
+    
+    festivities_dict = {}
+    if settings.auto_festivities:
+        festivities_dict.update(get_italian_holidays(year))
+    for cust_fest in settings.custom_festivities:
+        name = cust_fest.name
+        d_str = cust_fest.date.strip()
+        try:
+            if "/" in d_str:
+                parts = d_str.split("/")
+                d_obj = date(year, int(parts[1]), int(parts[0]))
+            elif "-" in d_str:
+                d_obj = datetime.strptime(d_str, "%Y-%m-%d").date()
+            else:
+                continue
+            festivities_dict[d_obj] = name
+        except Exception:
+            pass
+
+    export_csv_file = SCHEDULES_DIR / f"export_{year}_{mode_val}_{orient_val}.csv"
+    generate_csv_report(
+        schedule=schedule,
+        filename=str(export_csv_file),
+        run_info={"solver": "clingo", "time": metadata.get("execution_time_seconds", 0)},
+        year=year,
+        festivities_dict=festivities_dict,
+        csv_mode=mode_val,
+        csv_direction=csv_direction,
+        csv_map_pharmacies={p.id: p.name for p in settings.pharmacies},
+        first_day_of_week=parse_first_day_of_week(first_dow)
+    )
+
     return FileResponse(
-        path=str(csv_file),
-        filename=f"schedule_{year}.csv",
+        path=str(export_csv_file),
+        filename=f"schedule_{year}_{mode_val}_{orient_val}.csv",
         media_type="text/csv"
     )

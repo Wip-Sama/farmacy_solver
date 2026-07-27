@@ -70,18 +70,29 @@ Triggers an ASP solver job for the specified year. Enforces the **Single-Job Con
   {
     "year": 2026,
     "time_limit": 60,
-    "auto_festivities": true
+    "auto_festivities": true,
+    "reschedule_from": "15",
+    "regenerate_from": null,
+    "use_previous_year": true,
+    "first_day_of_week": "sunday"
   }
   ```
 * **Response (202 Accepted):** `{"status": "job_started", "job_id": "job_2026_1722095400"}`
-* **Error Response (409 Conflict):** `{"detail": "A scheduling job is already in progress."}`
+* **Error Response (400 Bad Request):** `{"detail": "Cannot generate schedule: Festivity '...' is missing a date while auto festivities is disabled."}`
+* **Error Response (409 Conflict):** `{"detail": "A scheduling job is already running (Job ID: job_2026_...)"}`
 
-#### `POST /api/schedules/{year}/export`
-Generates a downloadable CSV or PNG report file.
+#### `GET /api/schedules/{year}/export`
+Generates and downloads a CSV or PNG schedule report file.
+
+* **Query Parameters:**
+  - `format` (`csv` | `png`, default: `csv`)
+  - `orientation` (`horizontal` | `vertical`, default: `horizontal`)
+  - `type` (`normal` | `compact` | `extended`, default: `normal`)
+* **Response (200 OK):** Binary file stream (`text/csv` or `image/png`).
 
 ---
 
-## 2. Real-Time WebSocket Engine (`ws://127.0.0.1:8000/api/ws`)
+## 2. Real-Time WebSocket Engine (`ws://127.0.0.1:8001/api/ws`)
 
 All Vue browser tabs connect to `/api/ws`. The server broadcasts JSON event envelopes matching this structure:
 
@@ -102,3 +113,4 @@ All Vue browser tabs connect to `/api/ws`. The server broadcasts JSON event enve
 | `JOB_PROGRESS` | Server → All Clients | Streams solver stdout lines in real time (`{"line": "Grounding..."}`). |
 | `JOB_COMPLETED` | Server → All Clients | Broadcast when solver finishes. Unlocks UI buttons and triggers schedule reload. |
 | `JOB_FAILED` | Server → All Clients | Broadcast if solver crashes or fails. Contains error message. |
+

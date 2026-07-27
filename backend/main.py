@@ -1,10 +1,17 @@
 import os
 import sys
 import logging
+
+# Ensure project root is in sys.path when running python backend/main.py directly
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import APP_CONFIG
+
 from backend.api.routes import router as api_router
 from backend.api.ws import router as ws_router
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, computed } from 'vue'
 import { useAppStore } from '@/stores/appStore'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -43,11 +43,29 @@ import {
 } from 'lucide-vue-next'
 
 const store = useAppStore()
-const availableYears = [2024, 2025, 2026, 2027, 2028]
 
 onMounted(() => {
+  store.fetchAvailableYears()
   store.fetchScheduleRows(store.settings.year)
 })
+
+const displayPharmacies = computed(() => {
+  if (store.settings.pharmacies && store.settings.pharmacies.length > 0) {
+    return store.settings.pharmacies
+  }
+  return Array.from({ length: 10 }, (_, i) => ({ id: i + 1, name: `F${i + 1}`, location: 'centro' }))
+})
+
+function getPharmacyName(p: { id: number; name?: string }): string {
+  const mapped = store.settings.pharmacies.find(item => item.id === p.id)
+  if (mapped && mapped.name && mapped.name.trim() !== '') {
+    return mapped.name
+  }
+  if (p.name && p.name.trim() !== '' && !p.name.startsWith('F')) {
+    return p.name
+  }
+  return mapped?.name || p.name || `F${p.id}`
+}
 
 function handleYearChange(yr: number) {
   store.updateSettings({ year: yr })
@@ -64,7 +82,7 @@ function toggleViewMode() {
   <div class="flex-1 flex flex-col h-full min-h-0 space-y-4">
     <!-- Action Bar -->
     <div class="flex items-center justify-between gap-4 shrink-0">
-      <!-- Year Selector Dropdown & View Toggle -->
+      <!-- Year Selector Dropdown (Generated Years Only) & View Toggle -->
       <div class="flex items-center space-x-3">
         <Select 
           :model-value="store.settings.year.toString()" 
@@ -74,7 +92,7 @@ function toggleViewMode() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem v-for="yr in availableYears" :key="yr" :value="yr.toString()">
+            <SelectItem v-for="yr in store.availableYears" :key="yr" :value="yr.toString()">
               {{ yr }}
             </SelectItem>
           </SelectContent>
@@ -150,25 +168,29 @@ function toggleViewMode() {
 
     <Separator class="bg-border/30 shrink-0" />
 
-    <!-- Schedule Data Grid (Fills 100% available space) -->
+    <!-- Schedule Data Grid (Fills 100% available space with Sticky Header) -->
     <div class="flex-1 min-h-0 rounded-md border border-border/40 bg-card overflow-hidden">
       <ScrollArea class="h-full w-full">
-        <Table class="w-full">
-          <TableHeader class="sticky top-0 bg-card z-10 border-b border-border/40">
-            <TableRow v-if="store.viewMode === 'compact'">
-              <TableHead class="w-28 font-semibold">Settimana</TableHead>
-              <TableHead class="w-36 font-semibold">Data</TableHead>
-              <TableHead class="font-semibold">Farmacia di Turno</TableHead>
-              <TableHead class="w-48 font-semibold">Festività</TableHead>
+        <Table class="w-full relative">
+          <!-- Sticky Header row that stays in view on scroll -->
+          <TableHeader class="sticky top-0 bg-card z-20 shadow-sm border-b border-border/40">
+            <TableRow v-if="store.viewMode === 'compact'" class="hover:bg-transparent">
+              <TableHead class="w-28 font-semibold bg-card">Settimana</TableHead>
+              <TableHead class="w-36 font-semibold bg-card">Data</TableHead>
+              <TableHead class="font-semibold bg-card">Farmacia di Turno</TableHead>
+              <TableHead class="w-48 font-semibold bg-card">Festività</TableHead>
             </TableRow>
-            <TableRow v-else>
-              <TableHead class="w-28 font-semibold">Settimana</TableHead>
-              <TableHead class="w-36 font-semibold">Data</TableHead>
-              <TableHead class="text-center w-16 font-semibold">F1</TableHead>
-              <TableHead class="text-center w-16 font-semibold">F2</TableHead>
-              <TableHead class="text-center w-16 font-semibold">F3</TableHead>
-              <TableHead class="text-center w-16 font-semibold">F4</TableHead>
-              <TableHead class="w-48 font-semibold">Festività</TableHead>
+            <TableRow v-else class="hover:bg-transparent">
+              <TableHead class="w-28 font-semibold bg-card">Settimana</TableHead>
+              <TableHead class="w-36 font-semibold bg-card">Data</TableHead>
+              <TableHead 
+                v-for="p in displayPharmacies" 
+                :key="p.id" 
+                class="text-center font-semibold text-xs px-2 truncate min-w-[70px] bg-card"
+              >
+                {{ p.name || ('F' + p.id) }}
+              </TableHead>
+              <TableHead class="w-48 font-semibold bg-card">Festività</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -183,7 +205,7 @@ function toggleViewMode() {
               <TableCell class="font-bold text-xs text-primary font-mono">Wk {{ row.week }}</TableCell>
               <TableCell class="text-xs font-mono text-muted-foreground">{{ row.date }}</TableCell>
 
-              <!-- Compact View Column -->
+              <!-- Compact View Column: Display mapped pharmacy name -->
               <TableCell v-if="store.viewMode === 'compact'">
                 <div class="flex flex-wrap gap-1.5">
                   <Badge 
@@ -192,15 +214,15 @@ function toggleViewMode() {
                     :variant="p.location === 'centro' ? 'default' : 'secondary'"
                     class="text-[11px] font-medium"
                   >
-                    {{ p.name }} ({{ p.location }})
+                    {{ getPharmacyName(p) }} ({{ p.location }})
                   </Badge>
                 </div>
               </TableCell>
 
-              <!-- Extended View Columns F1..F4 -->
+              <!-- Extended View Columns: All Pharmacies (Names & IDs) -->
               <template v-else>
-                <TableCell v-for="fid in 4" :key="fid" class="text-center">
-                  <Check v-if="row.pharmacies.some((p: any) => p.id === fid)" class="h-4 w-4 mx-auto text-emerald-500 font-bold" />
+                <TableCell v-for="p in displayPharmacies" :key="p.id" class="text-center">
+                  <Check v-if="row.pharmacies.some((pharm: any) => pharm.id === p.id)" class="h-4 w-4 mx-auto text-emerald-500 font-bold" />
                   <Minus v-else class="h-4 w-4 mx-auto text-muted-foreground/40" />
                 </TableCell>
               </template>
@@ -211,7 +233,7 @@ function toggleViewMode() {
             </TableRow>
 
             <TableRow v-if="store.scheduleRows.length === 0">
-              <TableCell :colspan="store.viewMode === 'compact' ? 4 : 7" class="text-center py-20 text-muted-foreground italic text-xs">
+              <TableCell :colspan="store.viewMode === 'compact' ? 4 : (displayPharmacies.length + 3)" class="text-center py-20 text-muted-foreground italic text-xs">
                 <div class="flex flex-col items-center gap-2">
                   <Calendar class="h-8 w-8 text-muted-foreground/40" />
                   <span>No schedule data generated yet for {{ store.settings.year }}. Click + Generate above to start solving.</span>

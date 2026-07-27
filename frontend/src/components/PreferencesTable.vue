@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useAppStore } from '@/stores/appStore'
+import type { PharmacyPreference } from '@/stores/appStore'
 import { Button } from '@/components/ui/button'
 import DayMonthPicker from '@/components/DayMonthPicker.vue'
 import {
@@ -20,7 +21,19 @@ import {
 } from '@/components/ui/table'
 import { Plus, Trash2 } from 'lucide-vue-next'
 
+const props = defineProps<{
+  items?: PharmacyPreference[]
+}>()
+
+const emit = defineEmits<{
+  (e: 'update:items', val: PharmacyPreference[]): void
+}>()
+
 const store = useAppStore()
+
+const list = computed<PharmacyPreference[]>(() => {
+  return props.items !== undefined ? props.items : store.settings.pharmacy_preferences
+})
 
 const newPharmacyId = ref('1')
 const newDate = ref('')
@@ -33,18 +46,33 @@ const preferenceStateOptions = [
   'Preferably Open'
 ]
 
+function getPharmacyLabel(p: { id: number; name?: string }): string {
+  if (p && p.name && p.name.trim() !== '') {
+    return p.name
+  }
+  return `F${p.id}`
+}
+
+function updateList(newList: PharmacyPreference[]) {
+  if (props.items !== undefined) {
+    emit('update:items', newList)
+  } else {
+    store.updateSettings({ pharmacy_preferences: newList })
+  }
+}
+
 function addPreference() {
   if (!newDate.value) return
   const updated = [
-    ...store.settings.pharmacy_preferences,
+    ...list.value,
     { pharmacy_id: parseInt(newPharmacyId.value, 10), date: newDate.value, state: newState.value }
   ]
-  store.updateSettings({ pharmacy_preferences: updated })
+  updateList(updated)
   newDate.value = ''
 }
 
 function updatePreference(index: number, field: 'pharmacy_id' | 'date' | 'state', value: any) {
-  const updated = [...store.settings.pharmacy_preferences]
+  const updated = [...list.value]
   if (field === 'pharmacy_id') {
     updated[index] = { ...updated[index], pharmacy_id: parseInt(value, 10) || 1 }
   } else if (field === 'date') {
@@ -52,12 +80,12 @@ function updatePreference(index: number, field: 'pharmacy_id' | 'date' | 'state'
   } else if (field === 'state') {
     updated[index] = { ...updated[index], state: value }
   }
-  store.updateSettings({ pharmacy_preferences: updated })
+  updateList(updated)
 }
 
 function removePreference(index: number) {
-  const updated = store.settings.pharmacy_preferences.filter((_: unknown, i: number) => i !== index)
-  store.updateSettings({ pharmacy_preferences: updated })
+  const updated = list.value.filter((_: unknown, i: number) => i !== index)
+  updateList(updated)
 }
 </script>
 
@@ -69,7 +97,7 @@ function removePreference(index: number) {
 
     <!-- Explanation note from wireframe -->
     <p class="text-xs text-muted-foreground italic leading-relaxed">
-      Imposta preferenze specifiche di apertura/chiusura per ogni farmacia (F1, F2, F3...).
+      Imposta preferenze specifiche di apertura/chiusura per ogni farmacia.
     </p>
 
     <!-- Table -->
@@ -77,20 +105,20 @@ function removePreference(index: number) {
       <Table>
         <TableHeader>
           <TableRow class="hover:bg-transparent border-b border-border/40">
-            <TableHead class="w-32 font-semibold text-muted-foreground">Pharmacy</TableHead>
+            <TableHead class="w-36 font-semibold text-muted-foreground">Pharmacy</TableHead>
             <TableHead class="font-semibold text-muted-foreground">Date (gg/mm)</TableHead>
             <TableHead class="w-44 font-semibold text-muted-foreground">State</TableHead>
             <TableHead class="text-right w-16 font-semibold text-muted-foreground">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          <TableRow v-for="(pref, index) in store.settings.pharmacy_preferences" :key="index" class="border-b border-border/40">
+          <TableRow v-for="(pref, index) in list" :key="index" class="border-b border-border/40">
             <TableCell class="p-1.5">
               <Select 
                 :model-value="pref.pharmacy_id.toString()" 
                 @update:model-value="(val: any) => updatePreference(index, 'pharmacy_id', val)"
               >
-                <SelectTrigger class="h-8 text-xs font-bold text-primary w-28 border-border/40">
+                <SelectTrigger class="h-8 text-xs font-bold text-primary w-32 border-border/40">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -99,7 +127,7 @@ function removePreference(index: number) {
                     :key="p.id" 
                     :value="p.id.toString()"
                   >
-                    Pharmacy F{{ p.id }}
+                    {{ getPharmacyLabel(p) }}
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -137,7 +165,7 @@ function removePreference(index: number) {
               </Button>
             </TableCell>
           </TableRow>
-          <TableRow v-if="store.settings.pharmacy_preferences.length === 0">
+          <TableRow v-if="list.length === 0">
             <TableCell colspan="4" class="text-center text-xs text-muted-foreground italic py-4">
               No pharmacy preferences added.
             </TableCell>
@@ -158,7 +186,7 @@ function removePreference(index: number) {
             :key="p.id" 
             :value="p.id.toString()"
           >
-            Pharmacy F{{ p.id }}
+            {{ getPharmacyLabel(p) }}
           </SelectItem>
         </SelectContent>
       </Select>

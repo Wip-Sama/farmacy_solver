@@ -1,10 +1,73 @@
 {
   "year": 2026,
   "use_previous_year": true,
-  "first_day_of_week": "sunday",
+  "first_day_of_week": "monday",
   "auto_festivities": true,
-  "time_limit": 45,
+  "time_limit": 55,
   "regenerate_from": null,
-  "custom_festivities": [],
-  "pharmacy_preferences": []
+  "pharmacies": [
+    {
+      "id": 1,
+      "name": "MONTORO",
+      "location": "centro"
+    },
+    {
+      "id": 2,
+      "name": "BUCCARELLI",
+      "location": "centro"
+    },
+    {
+      "id": 3,
+      "name": "CENTRALE",
+      "location": "centro"
+    },
+    {
+      "id": 4,
+      "name": "DE PINO",
+      "location": "centro"
+    },
+    {
+      "id": 5,
+      "name": "DAVID",
+      "location": "centro"
+    },
+    {
+      "id": 6,
+      "name": "SAN MICHELE",
+      "location": "centro"
+    },
+    {
+      "id": 7,
+      "name": "MARCELLINI",
+      "location": "marina"
+    },
+    {
+      "id": 8,
+      "name": "PHARMADUO",
+      "location": "marina"
+    },
+    {
+      "id": 9,
+      "name": "IORFIDA",
+      "location": "marina"
+    },
+    {
+      "id": 10,
+      "name": "SAN LEONARDO",
+      "location": "marina"
+    }
+  ],
+  "custom_festivities": [
+    {
+      "name": "Festa di Prova",
+      "date": "15/08"
+    }
+  ],
+  "pharmacy_preferences": [
+    {
+      "pharmacy_id": 2,
+      "date": "15/08",
+      "state": "Closed"
+    }
+  ]
 }

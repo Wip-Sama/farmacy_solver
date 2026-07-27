@@ -24,16 +24,17 @@ const store = useAppStore()
 
 const orientation = ref('horizontal')
 const exportType = ref('normal')
+const pharmacyLabel = ref('names')
 
 function handleExportCsv() {
   toast.success('Downloading schedule CSV...')
-  window.open(`http://127.0.0.1:8000/api/schedules/${store.settings.year}/export?orientation=${orientation.value}&type=${exportType.value}`, '_blank')
+  window.open(`http://127.0.0.1:8001/api/schedules/${store.settings.year}/export?orientation=${orientation.value}&type=${exportType.value}&pharmacy_label=${pharmacyLabel.value}`, '_blank')
   store.isExportOpen = false
 }
 
 function handleExportPng() {
   toast.success('Downloading schedule PNG...')
-  window.open(`http://127.0.0.1:8000/api/schedules/${store.settings.year}/export?format=png&orientation=${orientation.value}&type=${exportType.value}`, '_blank')
+  window.open(`http://127.0.0.1:8001/api/schedules/${store.settings.year}/export?format=png&orientation=${orientation.value}&type=${exportType.value}&pharmacy_label=${pharmacyLabel.value}`, '_blank')
   store.isExportOpen = false
 }
 </script>
@@ -71,8 +72,24 @@ function handleExportPng() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="tiny">tiny</SelectItem>
+              <SelectItem value="compact">compact</SelectItem>
               <SelectItem value="normal">normal</SelectItem>
               <SelectItem value="extended">extended</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <!-- Pharmacy Labels (Names vs IDs) -->
+        <div class="flex items-center justify-between p-3 rounded-lg border border-border/40 bg-card">
+          <Label class="text-xs font-medium">Pharmacy Labels</Label>
+          <Select v-model="pharmacyLabel">
+            <SelectTrigger class="h-8 text-xs w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="names">names</SelectItem>
+              <SelectItem value="ids">ids</SelectItem>
             </SelectContent>
           </Select>
         </div>
