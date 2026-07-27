@@ -259,7 +259,7 @@ def main(
 
     total_weeks = date(year, 12, 28).isocalendar()[1]
 
-    from runner_core import parse_week_param
+    from core.runner_core import parse_week_param
     start_week_num = parse_week_param(start_week, year, first_day_of_week) or 1
     final_end_week = parse_week_param(end_week, year, first_day_of_week) or total_weeks
     reschedule_from_num = parse_week_param(reschedule_from, year, first_day_of_week)
