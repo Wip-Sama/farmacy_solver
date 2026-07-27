@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useAppStore } from '@/stores/appStore'
+import { cn } from '@/lib/utils'
 import type { CustomFestivity } from '@/stores/appStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -112,12 +113,12 @@ function removeFestivity(index: number) {
               <DayMonthPicker 
                 :model-value="fest.date" 
                 @update:model-value="(val: string) => updateFestivity(index, fest.name, val)"
-                :class="[
+                :class="cn(
                   'w-36 transition-colors',
                   !isAutoFest && (!fest.date || !fest.date.trim())
                     ? 'border-red-500 bg-red-500/10 text-red-400 dark:border-red-500 dark:bg-red-950/40 dark:text-red-400 ring-1 ring-red-500/50 font-medium'
                     : ''
-                ]"
+                )"
               />
             </TableCell>
             <TableCell class="text-right p-1.5">

@@ -57,17 +57,6 @@
       "location": "marina"
     }
   ],
-  "custom_festivities": [
-    {
-      "name": "Festa di Prova",
-      "date": "15/08"
-    }
-  ],
-  "pharmacy_preferences": [
-    {
-      "pharmacy_id": 2,
-      "date": "15/08",
-      "state": "Closed"
-    }
-  ]
+  "custom_festivities": [],
+  "pharmacy_preferences": []
 }

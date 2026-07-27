@@ -41,8 +41,29 @@ export interface ScheduleRow {
   is_summer?: boolean
 }
 
-const API_BASE = 'http://127.0.0.1:8001/api'
-const WS_URL = 'ws://127.0.0.1:8001/api/ws'
+const getApiBase = () => {
+  if (typeof window !== 'undefined' && window.location) {
+    if (window.location.port === '5173' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      return `${window.location.protocol}//${window.location.hostname}:8001/api`
+    }
+    return `${window.location.origin}/api`
+  }
+  return 'http://127.0.0.1:8001/api'
+}
+
+const getWsUrl = () => {
+  if (typeof window !== 'undefined' && window.location) {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const host = (window.location.port === '5173' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'))
+      ? `${window.location.hostname}:8001`
+      : window.location.host
+    return `${protocol}//${host}/api/ws`
+  }
+  return 'ws://127.0.0.1:8001/api/ws'
+}
+
+export const API_BASE = getApiBase()
+export const WS_URL = getWsUrl()
 
 export const useAppStore = defineStore('app', () => {
   const settings = ref<Settings>({

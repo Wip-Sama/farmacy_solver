@@ -9,7 +9,7 @@ import { parseDate } from '@internationalized/date'
 const props = withDefaults(defineProps<{
   modelValue?: string
   placeholder?: string
-  class?: string
+  class?: any
 }>(), {
   modelValue: '',
   placeholder: 'gg/mm',

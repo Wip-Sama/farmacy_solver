@@ -20,7 +20,7 @@ class TestBackendFrontendIntegration(unittest.TestCase):
         self.client = TestClient(app)
 
     def test_root_endpoint(self):
-        res = self.client.get("/")
+        res = self.client.get("/api")
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertIn("Pharmacy", data["app"])

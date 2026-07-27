@@ -101,3 +101,25 @@ Access the application in your web browser:
 ```powershell
 .\.venv312\Scripts\python cli/runner.py --time-limit 10 --year 2026 --auto-festivities --csv data/schedules/schedule_2026.csv
 ```
+
+---
+
+## 6. Docker Container Deployment
+
+You can build and run the entire application (Backend FastAPI + Frontend SPA) inside a Docker container.
+
+### Build Docker Image
+```powershell
+.\scripts\docker-build.ps1
+```
+
+### Launch Container
+```powershell
+.\scripts\docker-run.ps1
+```
+
+When running in Docker, access points are logged to standard output:
+- **Application Web UI:** `http://localhost:8001/`
+- **FastAPI REST API Docs:** `http://localhost:8001/docs`
+- **REST API Base:** `http://localhost:8001/api`
+

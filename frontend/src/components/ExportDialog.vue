@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useAppStore } from '@/stores/appStore'
+import { useAppStore, API_BASE } from '@/stores/appStore'
 import {
   Dialog,
   DialogContent,
@@ -28,13 +28,13 @@ const pharmacyLabel = ref('names')
 
 function handleExportCsv() {
   toast.success('Downloading schedule CSV...')
-  window.open(`http://127.0.0.1:8001/api/schedules/${store.settings.year}/export?orientation=${orientation.value}&type=${exportType.value}&pharmacy_label=${pharmacyLabel.value}`, '_blank')
+  window.open(`${API_BASE}/schedules/${store.settings.year}/export?orientation=${orientation.value}&type=${exportType.value}&pharmacy_label=${pharmacyLabel.value}`, '_blank')
   store.isExportOpen = false
 }
 
 function handleExportPng() {
   toast.success('Downloading schedule PNG...')
-  window.open(`http://127.0.0.1:8001/api/schedules/${store.settings.year}/export?format=png&orientation=${orientation.value}&type=${exportType.value}&pharmacy_label=${pharmacyLabel.value}`, '_blank')
+  window.open(`${API_BASE}/schedules/${store.settings.year}/export?format=png&orientation=${orientation.value}&type=${exportType.value}&pharmacy_label=${pharmacyLabel.value}`, '_blank')
   store.isExportOpen = false
 }
 </script>

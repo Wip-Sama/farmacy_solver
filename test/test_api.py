@@ -17,7 +17,7 @@ class TestAPIEndpoints(unittest.TestCase):
         self.client = TestClient(app)
 
     def test_root_endpoint(self):
-        response = self.client.get("/")
+        response = self.client.get("/api")
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["status"], "running")
@@ -57,6 +57,21 @@ class TestAPIEndpoints(unittest.TestCase):
         finally:
             job_manager.is_running = False
             job_manager.current_job_id = None
+
+    def test_spa_static_files_and_fallback(self):
+        # Test root / access returns status 200 (either SPA index.html or root API fallback if dist missing)
+        res_root = self.client.get("/")
+        self.assertEqual(res_root.status_code, 200)
+
+        # Test deep SPA route like /settings falls back to 200 index.html when dist exists
+        res_spa = self.client.get("/settings")
+        self.assertEqual(res_spa.status_code, 200)
+
+    def test_api_route_precedence(self):
+        # Ensure /api endpoints are NOT intercepted by SPA fallback
+        res_api = self.client.get("/api")
+        self.assertEqual(res_api.status_code, 200)
+        self.assertEqual(res_api.json()["status"], "running")
 
 if __name__ == "__main__":
     unittest.main()
