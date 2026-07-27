@@ -32,9 +32,9 @@ def default_pharmacies():
 class SettingsSchema(BaseModel):
     year: int = Field(default=2026, description="Scheduling year")
     use_previous_year: bool = Field(default=True, description="Extract past festivity assignments from previous year CSV")
-    first_day_of_week: str = Field(default="sunday", description="First day of week (sunday, monday, etc.)")
+    first_day_of_week: str = Field(default="monday", description="First day of week (sunday, monday, etc.)")
     auto_festivities: bool = Field(default=True, description="Auto-generate Italian national holidays")
-    time_limit: int = Field(default=60, description="ASP solver time limit in seconds")
+    time_limit: int = Field(default=55, description="ASP solver time limit in seconds")
     regenerate_from: Optional[str] = Field(default=None, description="Start date/week for rescheduling")
     pharmacies: List[PharmacySchema] = Field(default_factory=default_pharmacies)
     custom_festivities: List[CustomFestivity] = Field(default_factory=list)

@@ -119,7 +119,7 @@ def get_schedule_rows(year: int, mode: str = "compact") -> List[Dict[str, Any]]:
             pass
 
     rows = []
-    first_dow = settings.first_day_of_week or "sunday"
+    first_dow = settings.first_day_of_week or "monday"
     sum_start_w, sum_end_w = get_summer_weeks(year, first_dow)
 
     for week_num, farmacie_ids in sorted(schedule.items()):
@@ -147,7 +147,7 @@ def get_schedule_rows(year: int, mode: str = "compact") -> List[Dict[str, Any]]:
         pharmacies = []
         for fid in farmacie_ids:
             name = settings_pharm_map.get(fid) or (pharmacy_map.get(fid) if pharmacy_map.get(fid) and not (str(pharmacy_map.get(fid)).startswith("F") and str(pharmacy_map.get(fid))[1:].isdigit()) else None) or f"F{fid}"
-            location = settings_loc_map.get(fid) or ("centro" if fid in [1, 2, 3, 4, 10] else "marina")
+            location = settings_loc_map.get(fid) or "centro"
             pharmacies.append({"id": fid, "name": name, "location": location})
 
         rows.append({

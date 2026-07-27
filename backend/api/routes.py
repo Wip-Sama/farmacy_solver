@@ -151,7 +151,7 @@ async def export_schedule(
         raise HTTPException(status_code=404, detail=f"Schedule file for year {year} not found.")
 
     settings = get_settings()
-    first_dow = settings.first_day_of_week or "sunday"
+    first_dow = settings.first_day_of_week or "monday"
     mode_val = type.lower() if type else "normal"
     orient_val = orientation.lower() if orientation else "horizontal"
     label_val = pharmacy_label.lower() if pharmacy_label else "names"

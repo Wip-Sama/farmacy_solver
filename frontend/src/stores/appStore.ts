@@ -69,9 +69,9 @@ export const useAppStore = defineStore('app', () => {
   const settings = ref<Settings>({
     year: 2026,
     use_previous_year: true,
-    first_day_of_week: 'sunday',
+    first_day_of_week: 'monday',
     auto_festivities: true,
-    time_limit: 60,
+    time_limit: 55,
     regenerate_from: null,
     pharmacies: [
       { id: 1, name: 'MONTORO', location: 'centro' },
@@ -85,11 +85,7 @@ export const useAppStore = defineStore('app', () => {
       { id: 9, name: 'IORFIDA', location: 'marina' },
       { id: 10, name: 'SAN LEONARDO', location: 'marina' }
     ],
-    custom_festivities: [
-      { name: 'Capodanno', date: '01/01' },
-      { name: 'Pasqua', date: '05/04' },
-      { name: 'Natale', date: '25/12' }
-    ],
+    custom_festivities: [],
     pharmacy_preferences: []
   })
 

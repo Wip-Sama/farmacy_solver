@@ -38,6 +38,9 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 # Expose server port
 EXPOSE 8001
 
+# Declare internal container data volume for persistence and isolation
+VOLUME ["/app/data"]
+
 # Environment variables
 ENV PYTHONUNBUFFERED=1 \
     PORT=8001

@@ -7,7 +7,14 @@ services:
     ports:
       - "8001:8001"
     volumes:
-      - ./data:/app/data
+      # Internal named volume for container isolation:
+      - pharmacy_data:/app/data
+      # To bind-mount to local host directory instead, swap comments with the line below:
+      # - ./data:/app/data
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
+
+volumes:
+  pharmacy_data:
+    driver: local

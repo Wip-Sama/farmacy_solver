@@ -55,19 +55,20 @@ class JobManager:
     def __init__(self):
         self.is_running: bool = False
         self.current_job_id: Optional[str] = None
+        self.current_year: int = 2026
         self.started_at: Optional[datetime] = None
         self.current_task: Optional[asyncio.Task] = None
 
     async def start_job(
         self,
         year: int = 2026,
-        time_limit: int = 60,
+        time_limit: int = 55,
         auto_festivities: bool = True,
         base: str = "choice",
         opt: str = "penalita_esponenziale",
         reschedule_from: Optional[Any] = None,
         use_previous_year: bool = True,
-        first_day_of_week: str = "sunday",
+        first_day_of_week: str = "monday",
         custom_pharmacies: Optional[List[Any]] = None,
         custom_festivities: Optional[List[Any]] = None,
         pharmacy_preferences: Optional[List[Any]] = None,
@@ -78,6 +79,7 @@ class JobManager:
         self.is_running = True
         job_id = f"job_{year}_{int(time.time())}"
         self.current_job_id = job_id
+        self.current_year = year
         self.started_at = datetime.now()
 
         # Broadcast JOB_STARTED to all open browser tabs
@@ -118,7 +120,7 @@ class JobManager:
             type="JOB_FAILED",
             payload={
                 "job_id": self.current_job_id or "job",
-                "year": 2026,
+                "year": self.current_year,
                 "error": "Job generation cancelled by user."
             }
         ))
@@ -138,7 +140,7 @@ class JobManager:
         opt: str,
         reschedule_from: Optional[Any] = None,
         use_previous_year: bool = True,
-        first_day_of_week: str = "sunday",
+        first_day_of_week: str = "monday",
         custom_pharmacies: Optional[List[Any]] = None,
         custom_festivities: Optional[List[Any]] = None,
         pharmacy_preferences: Optional[List[Any]] = None,
