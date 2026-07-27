@@ -8,7 +8,7 @@ import subprocess
 class TestRunner(unittest.TestCase):
     def test_help_argument_parsing(self):
         root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-        runner_path = os.path.join(root_dir, 'runner.py')
+        runner_path = os.path.join(root_dir, 'cli', 'runner.py')
         result = subprocess.run(
             [sys.executable, runner_path, '--help'],
             stdout=subprocess.PIPE,
@@ -23,7 +23,7 @@ class TestRunner(unittest.TestCase):
 
     def test_invalid_opt_argument(self):
         root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-        runner_path = os.path.join(root_dir, 'runner.py')
+        runner_path = os.path.join(root_dir, 'cli', 'runner.py')
         result = subprocess.run(
             [sys.executable, runner_path, '--opt', 'invalid_opt'],
             stdout=subprocess.PIPE,
@@ -34,7 +34,7 @@ class TestRunner(unittest.TestCase):
         self.assertIn('invalid choice', result.stderr)
 
     def test_parse_week_param_now(self):
-        from runner_core import parse_week_param, get_week_number_for_date
+        from core.runner_core import parse_week_param, get_week_number_for_date
         from datetime import date
         today = date.today()
         expected_week = get_week_number_for_date(today, 2026, 'monday')

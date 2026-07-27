@@ -1,6 +1,7 @@
 import subprocess
 import sys
 import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import time
 import csv
 import tempfile
@@ -21,12 +22,13 @@ from rich.table import Table
 from rich.text import Text
 from rich.live import Live
 
-from runner_core import (
+from core.config import ASP_DIR, SCHEDULES_DIR
+from core.runner_core import (
     parse_festivities,
     generate_dynamic_constraints,
     run_external_solver
 )
-from terminal_display import (
+from core.terminal_display import (
     parse_schedule, 
     get_zona,
     get_week_date,
@@ -228,23 +230,23 @@ def main(
     end_week: Annotated[Optional[str], typer.Option(help="Settimana di fine per la schedulazione (numero o 'now')")] = None,
     solver: Annotated[SolverType, typer.Option(help="Solver to use")] = SolverType.clingo
 ):
-    optimizations = os.path.join("asp", "optimizations")
-    if not os.path.exists(optimizations):
+    optimizations = ASP_DIR / "optimizations"
+    if not optimizations.exists():
         console.print(f"[red]Optimizations directory '{optimizations}' not found.[/red]")
         sys.exit(1)
     
-    csv_dir = "schedules"
+    csv_dir = SCHEDULES_DIR
     if csv_file and not os.path.dirname(csv_file):
-        csv_file = os.path.join(csv_dir, csv_file)
+        csv_file = str(csv_dir / csv_file)
     if reschedule_csv and not os.path.dirname(reschedule_csv):
-        reschedule_csv = os.path.join(csv_dir, reschedule_csv)
+        reschedule_csv = str(csv_dir / reschedule_csv)
     if prev_year and not os.path.dirname(prev_year):
-        prev_year = os.path.join(csv_dir, prev_year)
+        prev_year = str(csv_dir / prev_year)
 
-    domain_file = os.path.join("asp", "domain.lp")
-    guess_file = os.path.join("asp", f"guess_{base}.lp")
-    constraints_file = os.path.join("asp", "constraints.lp")
-    opt_file = os.path.join("asp", "optimizations", f"{opt}.lp")
+    domain_file = str(ASP_DIR / "domain.lp")
+    guess_file = str(ASP_DIR / f"guess_{base}.lp")
+    constraints_file = str(ASP_DIR / "constraints.lp")
+    opt_file = str(ASP_DIR / "optimizations" / f"{opt}.lp")
 
     for f in [domain_file, guess_file, constraints_file, opt_file]:
         if not os.path.exists(f):

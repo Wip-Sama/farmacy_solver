@@ -8,6 +8,7 @@ import logging
 import subprocess
 from datetime import date, datetime, timedelta
 from collections import defaultdict
+from core.csv_utils import read_csv_schedule
 
 def parse_week_param(val: int | str | None, year: int = 2025, first_day_of_week: int | str = 0) -> int | None:
     """
@@ -201,7 +202,6 @@ def parse_prev_year_csv(csv_path: str) -> set[tuple[str, int]]:
     Returns a set of tuples: (festivity_name_lower, farmacia_id).
     Supports metadata rows, vertical (normal/compact/tiny/extended) and horizontal (row direction) CSVs.
     """
-    from csv_utils import read_csv_schedule
     _, _, _, past_festivities, _ = read_csv_schedule(csv_path)
     return past_festivities
 
@@ -238,7 +238,6 @@ def generate_dynamic_constraints(
         lines.append(f"reschedule_from({reschedule_from}).\n")
         lines.append("past_week(S) :- reschedule_from(START), settimana(S), S < START.\n\n")
         try:
-            from csv_utils import read_csv_schedule
             res_sched, _, _, _, _ = read_csv_schedule(reschedule_csv)
             for week, f_set in res_sched.items():
                 if week < reschedule_from:

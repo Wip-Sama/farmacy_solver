@@ -6,14 +6,14 @@ import unittest
 import tempfile
 import csv
 from datetime import date
-from runner_core import (
+from core.runner_core import (
     get_italian_holidays,
     parse_festivities,
     get_week_number_for_date,
     parse_prev_year_csv,
     generate_dynamic_constraints
 )
-from terminal_display import parse_schedule, generate_csv_report
+from core.terminal_display import parse_schedule, generate_csv_report
 
 class TestFestivities(unittest.TestCase):
 

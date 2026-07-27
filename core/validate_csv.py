@@ -4,13 +4,14 @@ import argparse
 import tempfile
 import logging
 from collections import defaultdict
-from csv_utils import read_csv_schedule, parse_first_day_of_week
+from core.csv_utils import read_csv_schedule, parse_first_day_of_week
+from core.runner_core import get_week_number_for_date
+from core.config import ASP_DIR
 
 from datetime import date
 
 def get_summer_weeks(year: int = 2025, first_day_of_week: int | str = 0) -> tuple[int, int]:
     """Calculates summer period start and end week numbers for June 15 - Sept 15."""
-    from runner_core import get_week_number_for_date
     w_start = get_week_number_for_date(date(year, 6, 15), year, first_day_of_week)
     w_end = get_week_number_for_date(date(year, 9, 15), year, first_day_of_week)
     return w_start, w_end
@@ -130,7 +131,7 @@ def validate_csv_asp(csv_path: str, prev_year_csv: str = None, year: int = None)
 
     # National holidays facts
     try:
-        from runner_core import get_italian_holidays, get_week_number_for_date
+        from core.runner_core import get_italian_holidays, get_week_number_for_date
         holidays = get_italian_holidays(year)
         for fest_date, fest_name in holidays.items():
             if fest_date.weekday() < 5:  # Monday to Friday
@@ -145,11 +146,11 @@ def validate_csv_asp(csv_path: str, prev_year_csv: str = None, year: int = None)
         f.writelines(fact_lines)
 
     try:
-        domain_file = os.path.join("asp", "domain.lp")
-        constraints_file = os.path.join("asp", "constraints.lp")
+        domain_file = os.path.join(ASP_DIR, "domain.lp")
+        constraints_file = os.path.join(ASP_DIR, "constraints.lp")
 
         if not os.path.exists(domain_file) or not os.path.exists(constraints_file):
-            return False, "ASP Files Missing", ["Required ASP files (domain.lp, constraints.lp) not found in asp/ directory."]
+            return False, "ASP Files Missing", [f"Required ASP files (domain.lp, constraints.lp) not found in {ASP_DIR}."]
 
         ctl = clingo.Control()
         ctl.load(domain_file)

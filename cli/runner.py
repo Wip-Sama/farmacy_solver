@@ -1,16 +1,19 @@
-import argparse
-import logging
 import sys
 import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import argparse
+import logging
 import time
 from datetime import date
-from runner_core import (
+from core.config import ASP_DIR
+from core.runner_core import (
     parse_festivities,
     generate_dynamic_constraints,
     run_clingo,
-    run_external_solver
+    run_external_solver,
+    parse_week_param
 )
-from terminal_display import (
+from core.terminal_display import (
     parse_schedule,
     print_weekly_schedule,
     print_shift_statistics,
@@ -22,8 +25,8 @@ from terminal_display import (
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def main():
-    optimizations = os.path.join("asp", "optimizations")
-    if not os.path.exists(optimizations):
+    optimizations = ASP_DIR / "optimizations"
+    if not optimizations.exists():
         logging.error(f"Optimizations directory '{optimizations}' not found.")
         sys.exit(1)
     else:
@@ -96,10 +99,10 @@ def main():
     if not args.dlv and not args.dlv2 and not args.clingo:
         args.clingo = True
 
-    domain_file = os.path.join("asp", "domain.lp")
-    guess_file = os.path.join("asp", f"guess_{args.base}.lp")
-    constraints_file = os.path.join("asp", "constraints.lp")
-    opt_file = os.path.join("asp", "optimizations", f"{args.opt}.lp")
+    domain_file = str(ASP_DIR / "domain.lp")
+    guess_file = str(ASP_DIR / f"guess_{args.base}.lp")
+    constraints_file = str(ASP_DIR / "constraints.lp")
+    opt_file = str(ASP_DIR / "optimizations" / f"{args.opt}.lp")
 
     for f in [domain_file, guess_file, constraints_file, opt_file]:
         if not os.path.exists(f):
@@ -111,7 +114,6 @@ def main():
 
     total_weeks = date(args.year, 12, 28).isocalendar()[1]
 
-    from runner_core import parse_week_param
     start_week = parse_week_param(args.start_week, args.year, args.first_day_of_week) or 1
     end_week = parse_week_param(args.end_week, args.year, args.first_day_of_week) or total_weeks
     reschedule_from = parse_week_param(args.reschedule_from, args.year, args.first_day_of_week)

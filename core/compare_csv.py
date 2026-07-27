@@ -1,7 +1,7 @@
 import sys
 import os
 import argparse
-from csv_utils import read_csv_schedule
+from core.csv_utils import read_csv_schedule
 
 def compare_csv(file1_path: str, file2_path: str, summary_only: bool = False):
     """

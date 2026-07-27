@@ -355,6 +355,6 @@ def generate_csv_report(
         print(f"Errore durante la generazione del report CSV: {e}")
 
 def get_week_date(week_number, year=2025, first_day_of_week=0):
-    from runner_core import get_week_start_date
+    from core.runner_core import get_week_start_date
     d_obj = get_week_start_date(week_number, year, first_day_of_week)
     return d_obj.strftime("%Y-%m-%d")

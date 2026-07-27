@@ -1,0 +1,10 @@
+server:
+  host: "127.0.0.1"
+  backend_port: 8000
+  frontend_port: 5173
+  reload: true
+
+paths:
+  data_dir: "data"
+  schedules_dir: "data/schedules"
+  settings_file: "data/settings.json"

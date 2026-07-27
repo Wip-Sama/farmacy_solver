@@ -4,8 +4,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 import unittest
 import tempfile
-from csv_utils import generate_csv_report
-from validate_csv import validate_csv
+from core.csv_utils import generate_csv_report
+from core.validate_csv import validate_csv
 
 class TestCSVValidation(unittest.TestCase):
     def setUp(self):
@@ -89,7 +89,7 @@ class TestCSVValidation(unittest.TestCase):
                 os.remove(path)
 
     def test_asp_validation(self):
-        from validate_csv import validate_csv_asp
+        from core.validate_csv import validate_csv_asp
         fd, path = tempfile.mkstemp(suffix=".csv", text=True)
         os.close(fd)
         try:

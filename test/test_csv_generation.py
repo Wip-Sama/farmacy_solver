@@ -6,8 +6,8 @@ import unittest
 import tempfile
 import csv
 from datetime import date
-from terminal_display import generate_csv_report, parse_pharmacy_mapping
-from runner_core import parse_prev_year_csv, generate_dynamic_constraints
+from core.terminal_display import generate_csv_report, parse_pharmacy_mapping
+from core.runner_core import parse_prev_year_csv, generate_dynamic_constraints
 
 class TestCSVGeneration(unittest.TestCase):
     def setUp(self):

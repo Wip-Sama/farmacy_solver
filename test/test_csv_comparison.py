@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 import unittest
 import tempfile
-from csv_utils import generate_csv_report, read_csv_schedule
+from core.csv_utils import generate_csv_report, read_csv_schedule
 
 class TestCSVComparison(unittest.TestCase):
     def setUp(self):
@@ -24,9 +24,9 @@ class TestCSVComparison(unittest.TestCase):
             read1, meta1, _, _, _ = read_csv_schedule(path1)
             read2, meta2, _, _, _ = read_csv_schedule(path2)
 
-            self.assertEqual(read1[1], {1, 7})
-            self.assertEqual(read1[2], {2, 8})
-            self.assertEqual(read2[2], {3, 9})
+            self.assertEqual(set(read1[1]), {1, 7})
+            self.assertEqual(set(read1[2]), {2, 8})
+            self.assertEqual(set(read2[2]), {3, 9})
         finally:
             if os.path.exists(path1):
                 os.remove(path1)
