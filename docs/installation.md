@@ -122,6 +122,11 @@ You can build and run the entire application (Backend FastAPI + Frontend SPA) in
 - **Internal Managed Volume (Isolated)**: By default, `docker-compose.yml` mounts a dedicated internal Docker volume `pharmacy_data:/app/data` (declared with `VOLUME ["/app/data"]` in `Dockerfile`). This keeps application settings and generated schedules completely isolated within Docker container storage.
 - **Host Bind-Mount**: If you prefer direct access to local `./data` files on your host filesystem, uncomment `- ./data:/app/data` in `docker-compose.yml`.
 
+### Automated GitHub Actions CI/CD
+A GitHub Actions workflow is included at `.github/workflows/docker-publish.yml`. On every `push` to the `main` branch:
+1. Docker image is automatically compiled (multi-stage frontend + ASP solver runner).
+2. Image is published to **GitHub Container Registry (GHCR)** at `ghcr.io/<owner>/<repo>:latest` and tagged with the commit SHA.
+
 When running in Docker, access points are logged to standard output:
 - **Application Web UI:** `http://localhost:8001/`
 - **FastAPI REST API Docs:** `http://localhost:8001/docs`
