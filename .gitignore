@@ -1,3 +1,7 @@
 *.csv
+export_*
+data/schedules/export_*
 .venv312/*
 *__pycache__*
+node_modules/
+frontend/dist/

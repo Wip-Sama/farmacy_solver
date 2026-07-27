@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  pharmacy-solver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pharmacy_solver_app
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1

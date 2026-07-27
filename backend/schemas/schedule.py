@@ -40,3 +40,4 @@ class ScheduleRowSchema(BaseModel):
     festivity: Optional[str] = None
     pharmacies: List[Dict[str, Any]]  # List of {"id": 1, "name": "F1", "location": "centro"}
     status: str = "future"  # "past", "current", "future"
+    is_summer: bool = False

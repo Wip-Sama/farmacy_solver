@@ -8,7 +8,7 @@ from datetime import datetime, date, timedelta
 
 from core.config import DATA_DIR, SCHEDULES_DIR, SETTINGS_FILE, PROJECT_ROOT
 from core.csv_utils import read_csv_schedule, get_week_date
-from core.runner_core import get_italian_holidays, get_week_start_date
+from core.runner_core import get_italian_holidays, get_week_start_date, get_summer_weeks
 from backend.schemas.settings import SettingsSchema
 from backend.schemas.schedule import ScheduleMetaSchema
 
@@ -120,6 +120,8 @@ def get_schedule_rows(year: int, mode: str = "compact") -> List[Dict[str, Any]]:
 
     rows = []
     first_dow = settings.first_day_of_week or "sunday"
+    sum_start_w, sum_end_w = get_summer_weeks(year, first_dow)
+
     for week_num, farmacie_ids in sorted(schedule.items()):
         status = "future"
         if year < current_year or (year == current_year and week_num < current_week):
@@ -127,6 +129,7 @@ def get_schedule_rows(year: int, mode: str = "compact") -> List[Dict[str, Any]]:
         elif year == current_year and week_num == current_week:
             status = "current"
 
+        is_summer = (sum_start_w <= week_num <= sum_end_w)
         week_start_date = get_week_start_date(week_num, year=year, first_day_of_week=first_dow)
         week_date_str = week_start_date.strftime("%Y-%m-%d")
 
@@ -153,6 +156,7 @@ def get_schedule_rows(year: int, mode: str = "compact") -> List[Dict[str, Any]]:
             "festivity": festivity_str,
             "pharmacies": pharmacies,
             "status": status,
+            "is_summer": is_summer,
         })
 
     return rows

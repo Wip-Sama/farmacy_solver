@@ -38,6 +38,7 @@ export interface ScheduleRow {
   festivity: string | null
   pharmacies: Array<{ id: number; name: string; location: string }>
   status: 'past' | 'current' | 'future'
+  is_summer?: boolean
 }
 
 const API_BASE = 'http://127.0.0.1:8001/api'

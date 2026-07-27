@@ -76,6 +76,53 @@ function toggleViewMode() {
   store.viewMode = store.viewMode === 'compact' ? 'extended' : 'compact'
   store.fetchScheduleRows(store.settings.year)
 }
+
+function checkSummer(row: any): boolean {
+  if (row.is_summer !== undefined) {
+    return row.is_summer
+  }
+  if (!row.date) return false
+  try {
+    const parts = row.date.split('-')
+    if (parts.length >= 2) {
+      const month = parseInt(parts[1], 10)
+      return month >= 6 && month <= 8
+    }
+  } catch (e) {
+    return false
+  }
+  return false
+}
+
+function getPharmacyColorClass(pharmacyId: number): { text: string; bg: string; border: string; pill: string } {
+  const p = store.settings.pharmacies.find(item => item.id === pharmacyId)
+  const loc = p?.location?.toLowerCase() || ''
+  
+  if (loc === 'centro') {
+    return {
+      text: 'text-blue-400 font-bold',
+      bg: 'bg-blue-500/10',
+      border: 'border-blue-500/30',
+      pill: 'bg-blue-500/20 text-blue-300 border border-blue-500/30 font-semibold'
+    }
+  } else if (loc === 'marina') {
+    return {
+      text: 'text-teal-400 font-bold',
+      bg: 'bg-teal-500/10',
+      border: 'border-teal-500/30',
+      pill: 'bg-teal-500/20 text-teal-300 border border-teal-500/30 font-semibold'
+    }
+  }
+  
+  const colors = [
+    { text: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30', pill: 'bg-blue-500/20 text-blue-300 border border-blue-500/30' },
+    { text: 'text-teal-400', bg: 'bg-teal-500/10', border: 'border-teal-500/30', pill: 'bg-teal-500/20 text-teal-300 border border-teal-500/30' },
+    { text: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/30', pill: 'bg-purple-500/20 text-purple-300 border border-purple-500/30' },
+    { text: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30', pill: 'bg-amber-500/20 text-amber-300 border border-amber-500/30' },
+    { text: 'text-rose-400', bg: 'bg-rose-500/10', border: 'border-rose-500/30', pill: 'bg-rose-500/20 text-rose-300 border border-rose-500/30' }
+  ]
+  return colors[pharmacyId % colors.length]
+}
 </script>
 
 <template>
@@ -169,30 +216,31 @@ function toggleViewMode() {
     <Separator class="bg-border/30 shrink-0" />
 
     <!-- Schedule Data Grid (Fills 100% available space with Sticky Header) -->
-    <div class="flex-1 min-h-0 rounded-md border border-border/40 bg-card overflow-hidden">
-      <ScrollArea class="h-full w-full">
-        <Table class="w-full relative">
-          <!-- Sticky Header row that stays in view on scroll -->
-          <TableHeader class="sticky top-0 bg-card z-20 shadow-sm border-b border-border/40">
-            <TableRow v-if="store.viewMode === 'compact'" class="hover:bg-transparent">
-              <TableHead class="w-28 font-semibold bg-card">Settimana</TableHead>
-              <TableHead class="w-36 font-semibold bg-card">Data</TableHead>
-              <TableHead class="font-semibold bg-card">Farmacia di Turno</TableHead>
-              <TableHead class="w-48 font-semibold bg-card">Festività</TableHead>
-            </TableRow>
-            <TableRow v-else class="hover:bg-transparent">
-              <TableHead class="w-28 font-semibold bg-card">Settimana</TableHead>
-              <TableHead class="w-36 font-semibold bg-card">Data</TableHead>
-              <TableHead 
-                v-for="p in displayPharmacies" 
-                :key="p.id" 
-                class="text-center font-semibold text-xs px-2 truncate min-w-[70px] bg-card"
-              >
+    <div class="flex-1 min-h-0 rounded-md border border-border/40 bg-card overflow-y-auto overflow-x-auto relative">
+      <Table no-wrapper class="w-full relative border-collapse">
+        <!-- Sticky Header row that stays in view on scroll -->
+        <TableHeader class="sticky top-0 z-30 bg-card shadow-sm border-b border-border/40">
+          <TableRow v-if="store.viewMode === 'compact'" class="hover:bg-transparent">
+            <TableHead class="sticky top-0 z-30 w-28 font-semibold bg-card border-b border-border/40 shadow-sm">Settimana</TableHead>
+            <TableHead class="sticky top-0 z-30 w-36 font-semibold bg-card border-b border-border/40 shadow-sm">Data</TableHead>
+            <TableHead class="sticky top-0 z-30 font-semibold bg-card border-b border-border/40 shadow-sm">Farmacia di Turno</TableHead>
+            <TableHead class="sticky top-0 z-30 w-48 font-semibold bg-card border-b border-border/40 shadow-sm">Festività</TableHead>
+          </TableRow>
+          <TableRow v-else class="hover:bg-transparent">
+            <TableHead class="sticky top-0 z-30 w-28 font-semibold bg-card border-b border-border/40 shadow-sm">Settimana</TableHead>
+            <TableHead class="sticky top-0 z-30 w-36 font-semibold bg-card border-b border-border/40 shadow-sm">Data</TableHead>
+            <TableHead 
+              v-for="p in displayPharmacies" 
+              :key="p.id" 
+              class="sticky top-0 z-30 text-center font-semibold text-xs px-1.5 py-2 truncate min-w-[80px] bg-card border-b border-border/40 shadow-sm"
+            >
+              <span :class="['px-2 py-1 rounded-md text-[11px] tracking-wide inline-block', getPharmacyColorClass(p.id).pill]">
                 {{ p.name || ('F' + p.id) }}
-              </TableHead>
-              <TableHead class="w-48 font-semibold bg-card">Festività</TableHead>
-            </TableRow>
-          </TableHeader>
+              </span>
+            </TableHead>
+            <TableHead class="sticky top-0 z-30 w-48 font-semibold bg-card border-b border-border/40 shadow-sm">Festività</TableHead>
+          </TableRow>
+        </TableHeader>
           <TableBody>
             <TableRow 
               v-for="row in store.scheduleRows" 
@@ -200,22 +248,34 @@ function toggleViewMode() {
               :class="[
                 row.status === 'past' ? 'opacity-40 bg-muted/20' : '',
                 row.status === 'current' ? 'bg-primary/10 border-l-4 border-l-primary font-semibold' : '',
+                checkSummer(row) && row.status !== 'current' ? 'bg-amber-500/5 hover:bg-amber-500/10' : ''
               ]"
             >
-              <TableCell class="font-bold text-xs text-primary font-mono">Wk {{ row.week }}</TableCell>
+              <!-- Settimana Column with Summer Highlight -->
+              <TableCell class="font-bold text-xs font-mono">
+                <span 
+                  v-if="checkSummer(row)" 
+                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold"
+                  title="Periodo Estivo (15 Giugno - 15 Settembre)"
+                >
+                  ☀️ Wk {{ row.week }}
+                </span>
+                <span v-else class="text-primary">
+                  Wk {{ row.week }}
+                </span>
+              </TableCell>
               <TableCell class="text-xs font-mono text-muted-foreground">{{ row.date }}</TableCell>
 
-              <!-- Compact View Column: Display mapped pharmacy name -->
+              <!-- Compact View Column: Display mapped pharmacy name with Zone Color Pill -->
               <TableCell v-if="store.viewMode === 'compact'">
                 <div class="flex flex-wrap gap-1.5">
-                  <Badge 
+                  <span 
                     v-for="p in row.pharmacies" 
                     :key="p.id"
-                    :variant="p.location === 'centro' ? 'default' : 'secondary'"
-                    class="text-[11px] font-medium"
+                    :class="['px-2 py-0.5 rounded text-[11px] font-medium inline-block', getPharmacyColorClass(p.id).pill]"
                   >
                     {{ getPharmacyName(p) }} ({{ p.location }})
-                  </Badge>
+                  </span>
                 </div>
               </TableCell>
 
@@ -242,7 +302,6 @@ function toggleViewMode() {
             </TableRow>
           </TableBody>
         </Table>
-      </ScrollArea>
     </div>
 
     <!-- Italian visual indicators legend Footer -->
@@ -251,6 +310,7 @@ function toggleViewMode() {
         <span class="flex items-center space-x-1.5"><span class="w-2.5 h-2.5 rounded-full bg-muted-foreground/40"></span> Settimane passate</span>
         <span class="flex items-center space-x-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Questa settimana</span>
         <span class="flex items-center space-x-1.5"><span class="w-2.5 h-2.5 rounded-full bg-primary"></span> Prossime settimane</span>
+        <span class="flex items-center space-x-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span> ☀️ Periodo estivo (15 Giugno - 15 Settembre)</span>
       </div>
     </div>
 

@@ -104,15 +104,46 @@ async def cancel_schedule_generation():
     return {"status": "job_cancelled"}
 
 
+import time
+from pathlib import Path
+
+def delete_file_safely(file_path: str):
+    """Safely deletes a temporary exported file after background response delivery."""
+    try:
+        p = Path(file_path)
+        if p.exists():
+            p.unlink()
+    except Exception as e:
+        pass
+
+def cleanup_old_export_files(schedules_dir: Path, max_age_seconds: int = 300):
+    """Deletes any temporary export files (export_*) older than max_age_seconds."""
+    try:
+        if not schedules_dir.exists():
+            return
+        now = time.time()
+        for f in schedules_dir.glob("export_*"):
+            if f.is_file() and (now - f.stat().st_mtime) > max_age_seconds:
+                try:
+                    f.unlink()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
 @router.get("/schedules/{year}/export")
 async def export_schedule(
     year: int,
+    background_tasks: BackgroundTasks,
     format: str = "csv",
     orientation: str = "horizontal",
     type: str = "normal",
     pharmacy_label: str = "names"
 ):
-    """Downloads the generated CSV or PNG schedule for the given year, formatted according to orientation, type, and pharmacy_label."""
+    """Downloads the generated CSV or PNG schedule for the given year, formatted according to orientation, type, and pharmacy_label. Automatically cleans up export files."""
+    cleanup_old_export_files(SCHEDULES_DIR, max_age_seconds=300)
+
     csv_file = SCHEDULES_DIR / f"schedule_{year}.csv"
     if not csv_file.exists():
         csv_file = SCHEDULES_DIR / f"test_{year}.csv"
@@ -127,7 +158,7 @@ async def export_schedule(
     pharm_map = {p.id: p.name for p in settings.pharmacies}
 
     if format.lower() == "png":
-        png_file = SCHEDULES_DIR / f"export_{year}_{mode_val}_{orient_val}_{label_val}.png"
+        png_file = SCHEDULES_DIR / f"export_{year}_{mode_val}_{orient_val}_{label_val}_{int(time.time()*1000)}.png"
         rows = get_schedule_rows(year, mode=mode_val)
         generate_schedule_png(
             year=year,
@@ -138,6 +169,7 @@ async def export_schedule(
             pharmacy_label=label_val,
             pharmacy_name_map=pharm_map
         )
+        background_tasks.add_task(delete_file_safely, str(png_file))
         return FileResponse(
             path=str(png_file),
             filename=f"schedule_{year}_{mode_val}_{orient_val}_{label_val}.png",
@@ -166,7 +198,7 @@ async def export_schedule(
         except Exception:
             pass
 
-    export_csv_file = SCHEDULES_DIR / f"export_{year}_{mode_val}_{orient_val}.csv"
+    export_csv_file = SCHEDULES_DIR / f"export_{year}_{mode_val}_{orient_val}_{int(time.time()*1000)}.csv"
     generate_csv_report(
         schedule=schedule,
         filename=str(export_csv_file),
@@ -179,6 +211,7 @@ async def export_schedule(
         first_day_of_week=parse_first_day_of_week(first_dow)
     )
 
+    background_tasks.add_task(delete_file_safely, str(export_csv_file))
     return FileResponse(
         path=str(export_csv_file),
         filename=f"schedule_{year}_{mode_val}_{orient_val}.csv",

@@ -1,0 +1,14 @@
+.venv312
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+node_modules
+frontend/node_modules
+frontend/dist
+data/schedules/export_*
+*.png
+*.csv

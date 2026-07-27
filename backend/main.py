@@ -41,6 +41,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi.staticfiles import StaticFiles
+
 # Register routers
 app.include_router(api_router, prefix="/api")
 app.include_router(ws_router, prefix="/api")
@@ -48,11 +50,16 @@ app.include_router(ws_router, prefix="/api")
 @app.get("/")
 async def root():
     return {
-        "app": "Pharmacy Scheduling Solver API",
+        "app": "UNICAL Demacs Pharmacy Solver API",
         "status": "running",
         "docs": "/docs",
         "ws": "/api/ws"
     }
+
+# Mount static frontend build (SPA) if frontend/dist exists (e.g. Docker container)
+frontend_dist = os.path.join(PROJECT_ROOT, "frontend", "dist")
+if os.path.exists(frontend_dist):
+    app.mount("/static", StaticFiles(directory=frontend_dist, html=True), name="static_frontend")
 
 if __name__ == "__main__":
     import uvicorn

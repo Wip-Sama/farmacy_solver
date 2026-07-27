@@ -23,7 +23,7 @@ class TestBackendFrontendIntegration(unittest.TestCase):
         res = self.client.get("/")
         self.assertEqual(res.status_code, 200)
         data = res.json()
-        self.assertEqual(data["app"], "Pharmacy Scheduling Solver API")
+        self.assertIn("Pharmacy", data["app"])
         self.assertEqual(data["status"], "running")
 
     def test_settings_persistence(self):

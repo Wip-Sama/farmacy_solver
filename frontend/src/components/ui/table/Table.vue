@@ -4,11 +4,18 @@ import { cn } from "@/lib/utils"
 
 const props = defineProps<{
   class?: HTMLAttributes["class"]
+  noWrapper?: boolean
+  divClass?: HTMLAttributes["class"]
 }>()
 </script>
 
 <template>
-  <div class="relative w-full overflow-auto">
+  <template v-if="props.noWrapper">
+    <table :class="cn('w-full caption-bottom text-sm', props.class)">
+      <slot />
+    </table>
+  </template>
+  <div v-else :class="cn('relative w-full overflow-auto', props.divClass)">
     <table :class="cn('w-full caption-bottom text-sm', props.class)">
       <slot />
     </table>

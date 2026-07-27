@@ -206,6 +206,14 @@ def parse_prev_year_csv(csv_path: str) -> set[tuple[str, int]]:
     return past_festivities
 
 
+def get_summer_weeks(year: int, first_day_of_week: int | str = 0) -> tuple[int, int]:
+    """Calculates the dynamic summer week range (start_week, end_week) for June 15 - Sept 15."""
+    sum_start_date = date(year, 6, 15)
+    sum_end_date = date(year, 9, 15)
+    sum_start_w = get_week_number_for_date(sum_start_date, year, first_day_of_week)
+    sum_end_w = get_week_number_for_date(sum_end_date, year, first_day_of_week)
+    return sum_start_w, sum_end_w
+
 def generate_dynamic_constraints(
     reschedule_csv: str | None,
     reschedule_from: int | None,
@@ -225,10 +233,7 @@ def generate_dynamic_constraints(
     actual_start_week = start_week
 
     # Dynamic summer facts for June 15 - Sept 15
-    sum_start_date = date(year, 6, 15)
-    sum_end_date = date(year, 9, 15)
-    sum_start_w = get_week_number_for_date(sum_start_date, year, first_day_of_week)
-    sum_end_w = get_week_number_for_date(sum_end_date, year, first_day_of_week)
+    sum_start_w, sum_end_w = get_summer_weeks(year, first_day_of_week)
     lines.append(f"% Dynamic summer period facts for {year} (June 15 - Sept 15)\n")
     lines.append(f"estate({sum_start_w}..{sum_end_w}).\n")
     lines.append("inverno(W) :- settimana(W), not estate(W).\n\n")
