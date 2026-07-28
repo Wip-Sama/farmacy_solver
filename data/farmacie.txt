@@ -1,0 +1,5 @@
+1,Farmacia Centrale,paese;
+2,Farmacia Del Porto,marina;
+3,Farmacia San Marco,paese;
+4,Farmacia Litorale,marina;
+5,Farmacia Roma,paese;

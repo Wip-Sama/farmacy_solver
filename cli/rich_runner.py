@@ -5,6 +5,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 import time
 import csv
 import tempfile
+import inspect
 from datetime import date, datetime, timedelta
 from enum import Enum
 from typing import List, Optional, Annotated
@@ -43,7 +44,7 @@ class SolverType(str, Enum):
     dlv = "dlv"
     dlv2 = "dlv2"
 
-def generate_output_tables(schedule, year, cost_value=None, elapsed_time=None, is_live=False, festivo_schedule=None, festivities_dict=None):
+def generate_output_tables(schedule, year, cost_value=None, elapsed_time=None, is_live=False, festivo_schedule=None, festivities_dict=None, pharmacies_list=None):
     renderables = []
 
     ### Weekly Schedule Table
@@ -100,7 +101,8 @@ def generate_output_tables(schedule, year, cost_value=None, elapsed_time=None, i
     stat_table.add_column("Turni Assegnati", justify="right")
 
     total_shifts_counted = 0
-    for farmacia in range(1, 11): 
+    pharma_ids = pharmacies_list if pharmacies_list is not None else range(1, 11)
+    for farmacia in pharma_ids: 
         count = sum(farmacia in farmacie for farmacie in schedule.values())
         total_shifts_counted += count
         stat_table.add_row(f"F{farmacia}", str(count))
@@ -125,7 +127,7 @@ def generate_output_tables(schedule, year, cost_value=None, elapsed_time=None, i
 
     return renderables
 
-def run_rich_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic_file=None, live=False, time_limit=None, year=2025, festivities_dict=None):
+def run_rich_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic_file=None, live=False, time_limit=None, year=2025, festivities_dict=None, pharmacies_list=None):
     files = [domain_file, guess_file, constraints_file, opt_file]
     if dynamic_file:
         files.append(dynamic_file)
@@ -172,7 +174,7 @@ def run_rich_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic
         if live and hasattr(on_model, 'live_ctx'):
             schedule, fest_sched = parse_schedule(model_str)
             cost_val = m.cost[0] if m.cost else None
-            renderables = generate_output_tables(schedule, year, cost_value=cost_val, is_live=True, festivo_schedule=fest_sched, festivities_dict=festivities_dict)
+            renderables = generate_output_tables(schedule, year, cost_value=cost_val, is_live=True, festivo_schedule=fest_sched, festivities_dict=festivities_dict, pharmacies_list=pharmacies_list)
             on_model.live_ctx.update(Group(*renderables, progress))
 
     with Live(Group(progress), console=console, refresh_per_second=10, transient=True) as live_ctx:
@@ -220,6 +222,7 @@ def main(
     first_day_of_week: Annotated[str, typer.Option("--first-day-of-the-week", "--fdotw", help="First day of the week (monday, saturday, sunday, 0..6)")] = "monday",
     reschedule_csv: Annotated[Optional[str], typer.Option(help="Path to the CSV file of a previous run")] = None,
     reschedule_from: Annotated[Optional[str], typer.Option(help="Week number from which to reschedule (number or 'now')")] = None,
+    pharmacies: Annotated[Optional[str], typer.Option(help="Pharmacy list 'id,name,city;...' or file path")] = None,
     unavailable: Annotated[Optional[List[str]], typer.Option(help="List of unavailable pharmacies (e.g., 3,15 4,16)")] = None,
     unavailable_interval: Annotated[Optional[List[str]], typer.Option(help="List of unavailable intervals (e.g., 3,15,18)")] = None,
     festivities: Annotated[Optional[List[str]], typer.Option(help="Custom festivities in format 'name,start_date,finish_date' or 'name,date'")] = None,
@@ -279,26 +282,73 @@ def main(
         console.print(f"[red]Error: --start-week {start_week_num} cannot be greater than --end-week {final_end_week}.[/red]")
         raise typer.Exit(code=1)
 
+    # Process pharmacies input (can be string or file path)
+    pharmacies_str = pharmacies
+    if not pharmacies_str:
+        # Fallback automatico: se non passate, genera 10 farmacie dividendo le zone 
+        # (indispensabile per soddisfare i vincoli che richiedono la "marina" o "paese")
+        pharmacies_str = ";".join([f"{i},Farmacia{i},{'marina' if i%2==0 else 'paese'}" for i in range(1, 11)])
+
+    if pharmacies_str and ("/" in pharmacies_str or "\\" in pharmacies_str or pharmacies_str.endswith(".txt") or pharmacies_str.endswith(".csv")):
+        if os.path.exists(pharmacies_str):
+            with open(pharmacies_str, "r", encoding="utf-8") as f:
+                pharmacies_str = f.read().strip()
+        else:
+            console.print(f"[yellow]Warning: Pharmacy file '{pharmacies_str}' not found, attempting to treat as string.[/yellow]")
+
+    pharmacies_list = None
+    parsed_pharmacies = []
+    if pharmacies_str:
+        try:
+            for p in pharmacies_str.split(';'):
+                p = p.strip()
+                if p:
+                    parts = p.split(',')
+                    p_id = int(parts[0].strip())
+                    # Se non è specificata una zona, mettiamo "paese" di default
+                    p_zona = parts[2].strip().lower() if len(parts) > 2 else "paese"
+                    parsed_pharmacies.append((p_id, p_zona))
+            pharmacies_list = sorted(list(set([p[0] for p in parsed_pharmacies])))
+        except Exception as e:
+            console.print(f"[red]Error parsing pharmacies string: {e}[/red]")
+
     festivities_dict = parse_festivities(festivities, auto_festivities, year)
 
     dynamic_file = None
     try:
+        kwargs = {
+            "festivities_dict": festivities_dict,
+            "prev_year_csv": prev_year,
+            "first_day_of_week": first_day_of_week,
+            "year": year
+        }
+        
+        sig = inspect.signature(generate_dynamic_constraints)
+        if "pharmacies" in sig.parameters and pharmacies_str:
+            kwargs["pharmacies"] = pharmacies_str
+
         dynamic_file = generate_dynamic_constraints(
             reschedule_csv, reschedule_from_num, 
             unavailable, unavailable_interval,
             start_week_num, final_end_week,
-            festivities_dict=festivities_dict,
-            prev_year_csv=prev_year,
-            first_day_of_week=first_day_of_week,
-            year=year
+            **kwargs
         )
+
+        # INIEZIONE DIRETTA NEL FILE ASP (ORA INCLUDE ANCHE LA ZONA)
+        if dynamic_file and os.path.exists(dynamic_file) and parsed_pharmacies:
+            with open(dynamic_file, "a", encoding="utf-8") as f_out:
+                f_out.write("\n% --- Fatti generati dinamicamente dalla CLI ---\n")
+                for p_id, p_zona in parsed_pharmacies:
+                    f_out.write(f"farmacia({p_id}).\n")
+                    f_out.write(f"zona({p_id},{p_zona}).\n")
+                f_out.write("\n")
 
         start_time = time.time()
         if solver == SolverType.clingo:
             asp_output, num_solutions = run_rich_clingo(
                 domain_file, guess_file, constraints_file, opt_file,
                 dynamic_file=dynamic_file, live=live, time_limit=time_limit, year=year,
-                festivities_dict=festivities_dict
+                festivities_dict=festivities_dict, pharmacies_list=pharmacies_list
             )
         elif solver == SolverType.dlv2:
             asp_output, num_solutions = run_external_solver("dlv2", domain_file, guess_file, constraints_file, opt_file, dynamic_file=dynamic_file, live=live, time_limit=time_limit)
@@ -317,7 +367,7 @@ def main(
         cost_match = re.search(r"COST\s+(\d+)@\d+", asp_output, re.IGNORECASE)
         cost_value = int(cost_match.group(1)) if cost_match else None
 
-        renderables = generate_output_tables(schedule, year, cost_value=cost_value, elapsed_time=elapsed_time, festivo_schedule=festivo_schedule, festivities_dict=festivities_dict)
+        renderables = generate_output_tables(schedule, year, cost_value=cost_value, elapsed_time=elapsed_time, festivo_schedule=festivo_schedule, festivities_dict=festivities_dict, pharmacies_list=pharmacies_list)
         
         if num_solutions is not None:
             renderables.append(Text.from_markup(f"\n[cyan]✓ Solved![/cyan] [green]Found {num_solutions} solutions.[/green]"))
