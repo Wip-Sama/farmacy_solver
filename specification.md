@@ -45,7 +45,25 @@ The pharmacy scheduling system uses a hybrid architecture:
 
 When `runner.py` or `rich_runner.py` is executed, `generate_dynamic_constraints()` in `runner_core.py` generates a temporary ASP file (`.lp`) using `tempfile.mkstemp()`. This temporary file is loaded alongside the static `.lp` files and is automatically deleted in a `finally` block when solver execution finishes.
 
-### 2.1 Scheduling Bounds (`settimana`)
+### 2.1 Dynamic Definition of Pharmacies and Zones
+The system supports the dynamic definition of pharmacies with their respective zones (`center` or `marina`) using the `--pharmacies` parameter.
+
+**Input format**: String in the format `"id,zone;id,zone;..."` (e.g., `"1,center;2,marina;3,center"`)
+
+**Default**: If no custom pharmacies are provided, the system automatically generates 10 pharmacies:
+- Pharmacies 1-6: `center` zone
+- Pharmacies 7-10: `marina` zone
+
+**ASP Fact Generation**:
+For each pharmacy, two facts are generated:
+```asp
+farmacia(1).
+zona(1,centro).
+farmacia(2).
+zona(2,marina).
+```
+
+### 2.2 Scheduling Bounds (`settimana`)
 Python calculates the active scheduling week range (`start_week` to `end_week`):
 ```asp
 settimana(1..52).
@@ -54,7 +72,7 @@ If `--start-week 20` is specified without rescheduling, `settimana(20..52).` is 
 
 ---
 
-### 2.2 Rescheduling & Historical Lock Facts
+### 2.3 Rescheduling & Historical Lock Facts
 
 When `--reschedule-csv <file>` and `--reschedule-from <WEEK>` are provided:
 1. Python reads `<file>` and extracts past week assignments for weeks `< WEEK`.
@@ -75,20 +93,36 @@ past_turno(1, 3).
 
 ---
 
-### 2.3 Unavailability Constraints
+### 2.4 Pharmacy Constraints and Preferences
 
-When `--unavailable <F,W>` or `--unavailable-interval <F,W1,W2>` are passed:
+The system supports four types of custom constraints, expressed as `pharmacy,week` pairs:
+
+Strong Constraints:
+- Force Open (`force_open`): Forces a pharmacy to be on duty in a given week
+- Force Closed (`force_closed`): Prevents a pharmacy from being on duty in a given week
 ```asp
-% From --unavailable 1,22
-:- turno(22, 1).
+% Force Open: farmacia 1 DEVE essere di turno nella settimana 22
+:- not turno(22, 1).
 
-% From --unavailable-interval 3,22,28
-:- turno(S, 3), S >= 22, S <= 28.
+% Force Closed: farmacia 1 NON PUÒ essere di turno nella settimana 22
+:- turno(22, 1).
+```
+
+**Weak Constraints:**
+- **Preferably Open** (`pref_open`): Penalizes not assigning a pharmacy in a given week
+
+- **Preferably Closed** (`pref_closed`): Penalizes assigning a pharmacy in a given week
+```asp
+% Preferably Open: penalità 10 se farmacia 1 NON è di turno nella settimana 22
+:~ not turno(22, 1). [10@0, 1, 22]
+
+% Preferably Closed: penalità 10 se farmacia 1 è di turno nella settimana 22
+:~ turno(22, 1). [10@0, 1, 22]
 ```
 
 ---
 
-### 2.4 Festivities Generation (`festivita`, `past_festivita`)
+### 2.5 Festivities Generation (`festivita`, `past_festivita`)
 
 When `--auto-festivities` or `--festivities` is enabled:
 

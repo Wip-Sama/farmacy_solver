@@ -1,5 +1,5 @@
 {
-  "year": 2026,
+  "year": 2027,
   "use_previous_year": true,
   "first_day_of_week": "monday",
   "auto_festivities": true,
@@ -57,12 +57,7 @@
       "location": "marina"
     }
   ],
-  "custom_festivities": [
-    {
-      "name": "Festa di Prova",
-      "date": "15/08"
-    }
-  ],
+  "custom_festivities": [],
   "pharmacy_preferences": [
     {
       "pharmacy_id": 2,

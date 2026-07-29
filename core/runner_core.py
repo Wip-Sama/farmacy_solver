@@ -232,7 +232,11 @@ def parse_fw_constraints(fw_list: list | None) -> list[tuple[int, int]]:
                         try:
                             parsed.append((int(parts[0].strip()), int(parts[1].strip())))
                         except ValueError:
-                            pass
+                            logging.error(f"Valori non validi nel vincolo '{element}'. Devono essere ID numerici.")
+                            sys.exit(1)
+                    else:
+                        logging.error(f"Formato incompleto nel vincolo '{element}'. Atteso formato 'ID,Settimana'.")
+                        sys.exit(1)
     return parsed
 
 def generate_dynamic_constraints(
@@ -254,15 +258,21 @@ def generate_dynamic_constraints(
 ) -> str:
     """
     Generates dynamic ASP rules in a temporary file for week limits, rescheduling, unavailabilities, festivities, and dynamic summer period.
-    Now also directly handles custom pharmacies injection and strong/weak constraints.
+    Directly handles custom pharmacies injection and strong/weak constraints.
     """
     lines = []
     actual_start_week = start_week
 
-    # --- PARSING E INIEZIONE FARMACIE ---
+    # DEBUG
+    logging.info(f"DEBUG RICEVUTO - pharmacies grezze: {repr(pharmacies)}")
+    #pharmacies="" # IMPORTANTE! DA TOGLIERE, PROVA MOMENTANEA
+
+    # Apply 10 default pharmacies if none provided
     if not pharmacies:
-        # Fallback automatico: 10 farmacie dividendo le zone in centro e marina
-        pharmacies = ";".join([f"{i},{'marina' if i%2==0 else 'centro'}" for i in range(1, 11)])
+        pharmacies = ";".join([
+            f"{i},{'centro' if i <= 6 else 'marina'}" 
+            for i in range(1, 11)
+        ])
 
     if pharmacies and (os.path.isfile(pharmacies) or pharmacies.endswith(".txt") or pharmacies.endswith(".csv")):
         try:
@@ -284,23 +294,29 @@ def generate_dynamic_constraints(
                         p_zona = parts[1].lower() if parts[1].lower() in ['centro', 'marina'] else 'centro'
                         parsed_pharmacies.append((p_id, p_zona))
                     except ValueError:
-                        pass
+                        logging.error(f"ID farmacia non valido: '{parts[0]}'. Deve essere un numero intero.")
+                        sys.exit(1)
                 elif len(parts) == 1:
                     try:
                         p_id = int(parts[0])
                         parsed_pharmacies.append((p_id, "centro"))
                     except ValueError:
-                        pass
+                        logging.error(f"ID farmacia non valido: '{parts[0]}'. Deve essere un numero intero.")
+                        sys.exit(1)
+                else:
+                    logging.error(f"Formato farmacia non riconosciuto in '{p}'.")
+                    sys.exit(1)
 
+    # Scrittura dei fatti ASP nel file temporaneo per farmacie e zone
     if parsed_pharmacies:
-        lines.append("% --- Fatti generati dinamicamente (Farmacie e Zone) ---\n")
+        lines.append("% Fatti generati dinamicamente (Farmacie e Zone)\n")
         for p_id, p_zona in parsed_pharmacies:
             lines.append(f"farmacia({p_id}).\n")
             lines.append(f"zona({p_id},{p_zona}).\n")
         lines.append("\n")
 
-    # --- INIEZIONE VINCOLI STRONG/WEAK ---
-    lines.append("% --- Vincoli Strong e Weak personalizzati ---\n")
+    # Inserimento dei vincoli logici utente per forzature e preferenze
+    lines.append("% Vincoli logici personalizzati (Strong/Weak Constraints)\n")
     for f, w in parse_fw_constraints(force_open):
         lines.append(f":- not turno({w}, {f}).\n")
     for f, w in parse_fw_constraints(force_closed):
@@ -380,6 +396,11 @@ def generate_dynamic_constraints(
     fd, path = tempfile.mkstemp(suffix=".lp", text=True)
     with os.fdopen(fd, 'w') as f:
         f.writelines(lines)
+    
+    # DEBUG ------------------------------------
+    with open(path, 'r', encoding='utf-8') as dbg:
+        logging.info(f"--- CONTENUTO FILE DINAMICO ({path}) ---\n" + dbg.read())
+
     return path
 
 def run_external_solver(executable, domain_file, guess_file, constraints_file, opt_file, dynamic_file=None, live=False, time_limit=None):

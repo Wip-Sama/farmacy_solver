@@ -1,0 +1,9 @@
+{
+  "year": 2027,
+  "filename": "schedule_2027.csv",
+  "generated_at": "2026-07-29T18:00:43.754158",
+  "solver": "clingo",
+  "execution_time_seconds": 55.39,
+  "cost_value": "Completed",
+  "is_locked": false
+}

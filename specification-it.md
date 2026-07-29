@@ -42,10 +42,27 @@ Il sistema di turnazione delle farmacie utilizza un'architettura ibrida:
 ---
 
 ## 2. Generazione Dinamica del Codice ASP
-
 Quando viene eseguito `runner.py` o `rich_runner.py`, la funzione `generate_dynamic_constraints()` in `runner_core.py` crea un file ASP temporaneo (`.lp`) tramite `tempfile.mkstemp()`. Questo file viene caricato insieme ai file `.lp` statici e viene eliminato automaticamente nel blocco `finally` al termine dell'esecuzione del solver.
 
-### 2.1 Limiti della Schedulazione (`settimana`)
+### 2.1 Definizione Dinamica delle Farmacie e Zone
+Il sistema supporta la definizione dinamica delle farmacie con le rispettive zone di appartenenza (`centro` o `marina`) tramite il parametro `--pharmacies`.
+
+**Formato di input**: Stringa nel formato `"id,zona;id,zona;..."` (es. `"1,centro;2,marina;3,centro"`)
+
+**Default**: Se non vengono fornite farmacie personalizzate, il sistema genera automaticamente 10 farmacie:
+- Farmacie 1-6: zona `centro`
+- Farmacie 7-10: zona `marina`
+
+**Generazione dei fatti ASP**:
+Per ogni farmacia, vengono generati due fatti:
+```asp
+farmacia(1).
+zona(1,centro).
+farmacia(2).
+zona(2,marina).
+```
+
+### 2.2 Limiti della Schedulazione (`settimana`)
 Python calcola l'intervallo di settimane attive (`start_week` .. `end_week`):
 ```asp
 settimana(1..52).
@@ -54,7 +71,7 @@ Se viene specificato `--start-week 20` senza rischedulazione, viene generato `se
 
 ---
 
-### 2.2 Rischedulazione e Blocco dello Storico
+### 2.3 Rischedulazione e Blocco dello Storico
 
 Quando vengono forniti `--reschedule-csv <file>` e `--reschedule-from <SETTIMANA>`:
 1. Python legge `<file>` ed estrae i turni delle settimane precedenti a `<SETTIMANA>`.
@@ -75,20 +92,38 @@ past_turno(1, 3).
 
 ---
 
-### 2.3 Vincoli di Indisponibilità
+### 2.4 Vincoli e Preferenze sulle Farmacie
 
-Quando vengono passati `--unavailable <F,W>` o `--unavailable-interval <F,W1,W2>`:
+Il sistema supporta quattro tipi di vincoli personalizzati, espressi come coppie `farmacia,settimana`:
+
+**Vincoli Forti (Strong Constraints):**
+- **Force Open** (`force_open`): forza una farmacia ad essere di turno in una data settimana
+- **Force Closed** (`force_closed`): impedisce a una farmacia di essere di turno in una data settimana
+
 ```asp
-% Da --unavailable 1,22
-:- turno(22, 1).
+% Force Open: farmacia 1 DEVE essere di turno nella settimana 22
+:- not turno(22, 1).
 
-% Da --unavailable-interval 3,22,28
-:- turno(S, 3), S >= 22, S <= 28.
+% Force Closed: farmacia 1 NON PUÒ essere di turno nella settimana 22
+:- turno(22, 1).
+```
+
+**Vincoli Deboli (Weak Constraints):**
+- **Preferably Open** (`pref_open`): penalizza la non assegnazione di una farmacia in una data settimana
+
+- **Preferably Closed (`pref_closed`): penalizza l'assegnazione di una farmacia in una data settimana
+
+```asp
+% Preferably Open: penalità 10 se farmacia 1 NON è di turno nella settimana 22
+:~ not turno(22, 1). [10@0, 1, 22]
+
+% Preferably Closed: penalità 10 se farmacia 1 è di turno nella settimana 22
+:~ turno(22, 1). [10@0, 1, 22]
 ```
 
 ---
 
-### 2.4 Generazione delle Festività (`festivita`, `past_festivita`)
+### 2.5 Generazione delle Festività (`festivita`, `past_festivita`)
 
 Quando viene abilitato `--auto-festivities` o `--festivities`:
 

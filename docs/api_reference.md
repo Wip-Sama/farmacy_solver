@@ -19,6 +19,11 @@ Returns current user preferences and solver configuration from `data/settings.js
     "first_day_of_week": "sunday",
     "auto_festivities": true,
     "time_limit": 60,
+    "pharmacies": [
+      { "id": 1, "name": "MONTORO", "location": "centro" },
+      { "id": 2, "name": "BUCCARELLI", "location": "centro" },
+      { "id": 7, "name": "MARCELLINI", "location": "marina" }
+    ],
     "reschedule_from": null,
     "custom_festivities": [
       { "name": "Pasqua", "date": "2026-04-05" }
@@ -67,15 +72,25 @@ Triggers an ASP solver job for the specified year. Enforces the **Single-Job Con
 
 * **Request Body:**
   ```json
-  {
-    "year": 2026,
-    "time_limit": 60,
-    "auto_festivities": true,
-    "reschedule_from": "15",
-    "regenerate_from": null,
-    "use_previous_year": true,
-    "first_day_of_week": "sunday"
-  }
+    {
+      "year": 2026,
+      "time_limit": 60,
+      "auto_festivities": true,
+      "use_previous_year": true,
+      "first_day_of_week": "sunday",
+      "reschedule_from": null,
+      "regenerate_from": null,
+      "custom_pharmacies": [
+        { "id": 1, "name": "MONTORO", "location": "centro" },
+        { "id": 7, "name": "MARCELLINI", "location": "marina" }
+      ],
+      "custom_festivities": [
+        { "name": "Pasqua", "date": "05/04" }
+      ],
+      "pharmacy_preferences": [
+        { "pharmacy_id": 2, "date": "15/08", "state": "Closed" }
+      ]
+    }
   ```
 * **Response (202 Accepted):** `{"status": "job_started", "job_id": "job_2026_1722095400"}`
 * **Error Response (400 Bad Request):** `{"detail": "Cannot generate schedule: Festivity '...' is missing a date while auto festivities is disabled."}`
