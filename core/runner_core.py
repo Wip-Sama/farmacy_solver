@@ -195,7 +195,6 @@ def extract_pharmacy_ids(farmacie_str, pharmacy_name_to_id=None):
             ids.add(pharmacy_name_to_id[t.lower()])
     return ids
 
-
 def parse_prev_year_csv(csv_path: str) -> set[tuple[str, int]]:
     """
     Parses a previous year CSV to extract past festivity assignments.
@@ -205,7 +204,6 @@ def parse_prev_year_csv(csv_path: str) -> set[tuple[str, int]]:
     _, _, _, past_festivities, _ = read_csv_schedule(csv_path)
     return past_festivities
 
-
 def get_summer_weeks(year: int, first_day_of_week: int | str = 0) -> tuple[int, int]:
     """Calculates the dynamic summer week range (start_week, end_week) for June 15 - Sept 15."""
     sum_start_date = date(year, 6, 15)
@@ -213,6 +211,29 @@ def get_summer_weeks(year: int, first_day_of_week: int | str = 0) -> tuple[int, 
     sum_start_w = get_week_number_for_date(sum_start_date, year, first_day_of_week)
     sum_end_w = get_week_number_for_date(sum_end_date, year, first_day_of_week)
     return sum_start_w, sum_end_w
+
+def parse_fw_constraints(fw_list: list | None) -> list[tuple[int, int]]:
+    """Helper function to parse lists of Farmacia,Settimana constraints, supporting inline strings and text files."""
+    parsed = []
+    if fw_list:
+        for item in fw_list:
+            if os.path.isfile(item) or item.endswith('.txt') or item.endswith('.csv'):
+                try:
+                    with open(item, 'r', encoding='utf-8') as f:
+                        item = f.read().strip()
+                except Exception as e:
+                    logging.warning(f"Could not read file {item}: {e}")
+            
+            for element in item.split(';'):
+                element = element.strip()
+                if element:
+                    parts = element.split(',')
+                    if len(parts) >= 2:
+                        try:
+                            parsed.append((int(parts[0].strip()), int(parts[1].strip())))
+                        except ValueError:
+                            pass
+    return parsed
 
 def generate_dynamic_constraints(
     reschedule_csv: str | None,
@@ -224,13 +245,72 @@ def generate_dynamic_constraints(
     festivities_dict: dict | None = None,
     prev_year_csv: str | None = None,
     first_day_of_week: int | str = 0,
-    year: int = 2025
+    year: int = 2025,
+    pharmacies: str | None = None,
+    force_open: list | None = None,
+    force_closed: list | None = None,
+    pref_open: list | None = None,
+    pref_closed: list | None = None
 ) -> str:
     """
     Generates dynamic ASP rules in a temporary file for week limits, rescheduling, unavailabilities, festivities, and dynamic summer period.
+    Now also directly handles custom pharmacies injection and strong/weak constraints.
     """
     lines = []
     actual_start_week = start_week
+
+    # --- PARSING E INIEZIONE FARMACIE ---
+    if not pharmacies:
+        # Fallback automatico: 10 farmacie dividendo le zone in centro e marina
+        pharmacies = ";".join([f"{i},{'marina' if i%2==0 else 'centro'}" for i in range(1, 11)])
+
+    if pharmacies and (os.path.isfile(pharmacies) or pharmacies.endswith(".txt") or pharmacies.endswith(".csv")):
+        try:
+            with open(pharmacies, "r", encoding="utf-8") as f:
+                pharmacies = f.read().strip()
+        except Exception as e:
+            logging.error(f"Failed to read pharmacies file: {e}")
+            sys.exit(1)
+
+    parsed_pharmacies = []
+    if pharmacies:
+        for p in pharmacies.split(';'):
+            p = p.strip()
+            if p:
+                parts = [x.strip() for x in p.split(',')]
+                if len(parts) >= 2:
+                    try:
+                        p_id = int(parts[0])
+                        p_zona = parts[1].lower() if parts[1].lower() in ['centro', 'marina'] else 'centro'
+                        parsed_pharmacies.append((p_id, p_zona))
+                    except ValueError:
+                        pass
+                elif len(parts) == 1:
+                    try:
+                        p_id = int(parts[0])
+                        parsed_pharmacies.append((p_id, "centro"))
+                    except ValueError:
+                        pass
+
+    if parsed_pharmacies:
+        lines.append("% --- Fatti generati dinamicamente (Farmacie e Zone) ---\n")
+        for p_id, p_zona in parsed_pharmacies:
+            lines.append(f"farmacia({p_id}).\n")
+            lines.append(f"zona({p_id},{p_zona}).\n")
+        lines.append("\n")
+
+    # --- INIEZIONE VINCOLI STRONG/WEAK ---
+    lines.append("% --- Vincoli Strong e Weak personalizzati ---\n")
+    for f, w in parse_fw_constraints(force_open):
+        lines.append(f":- not turno({w}, {f}).\n")
+    for f, w in parse_fw_constraints(force_closed):
+        lines.append(f":- turno({w}, {f}).\n")
+    for f, w in parse_fw_constraints(pref_open):
+        lines.append(f":~ not turno({w}, {f}). [10@0, {f}, {w}]\n")
+    for f, w in parse_fw_constraints(pref_closed):
+        lines.append(f":~ turno({w}, {f}). [10@0, {f}, {w}]\n")
+    lines.append("\n")
+
 
     # Dynamic summer facts for June 15 - Sept 15
     sum_start_w, sum_end_w = get_summer_weeks(year, first_day_of_week)

@@ -5,7 +5,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 import time
 import csv
 import tempfile
-import inspect
 from datetime import date, datetime, timedelta
 from enum import Enum
 from typing import List, Optional, Annotated
@@ -209,27 +208,6 @@ def run_rich_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic
 
     return output, len(models)
 
-# Helper function to parse lists of Farmacia,Settimana
-def parse_fw_constraints(fw_list):
-    parsed = []
-    if fw_list:
-        for item in fw_list:
-            # Se è un file testuale, ne leggiamo il contenuto
-            if os.path.isfile(item) or item.endswith('.txt') or item.endswith('.csv'):
-                with open(item, 'r', encoding='utf-8') as f:
-                    item = f.read().strip()
-            
-            for element in item.split(';'):
-                element = element.strip()
-                if element:
-                    parts = element.split(',')
-                    if len(parts) >= 2:
-                        try:
-                            parsed.append((int(parts[0].strip()), int(parts[1].strip())))
-                        except ValueError:
-                            pass
-    return parsed
-
 @app.command()
 def main(
     base: Annotated[str, typer.Option(help="The base encoding to use")] = "choice",
@@ -243,7 +221,6 @@ def main(
     first_day_of_week: Annotated[str, typer.Option("--first-day-of-the-week", "--fdotw", help="First day of the week (monday, saturday, sunday, 0..6)")] = "monday",
     reschedule_csv: Annotated[Optional[str], typer.Option(help="Path to the CSV file of a previous run")] = None,
     reschedule_from: Annotated[Optional[str], typer.Option(help="Week number from which to reschedule (number or 'now')")] = None,
-    pharmacies: Annotated[Optional[str], typer.Option(help="Pharmacy list 'id,name,city;...' or file path")] = None,
     unavailable: Annotated[Optional[List[str]], typer.Option(help="List of unavailable pharmacies (e.g., 3,15 4,16)")] = None,
     unavailable_interval: Annotated[Optional[List[str]], typer.Option(help="List of unavailable intervals (e.g., 3,15,18)")] = None,
     festivities: Annotated[Optional[List[str]], typer.Option(help="Custom festivities in format 'name,start_date,finish_date' or 'name,date'")] = None,
@@ -252,11 +229,11 @@ def main(
     year: Annotated[int, typer.Option(help="L'anno per cui si vuole generare il calendario")] = 2025,
     start_week: Annotated[str, typer.Option(help="Settimana di inizio per la schedulazione (numero o 'now')")] = "1",
     end_week: Annotated[Optional[str], typer.Option(help="Settimana di fine per la schedulazione (numero o 'now')")] = None,
-    # new cli options for the preferences:
-    force_open: Annotated[Optional[List[str]], typer.Option(help="Forza l'apertura di una farmacia in una determinata settimana (es. 1,15)")] = None,
-    force_closed: Annotated[Optional[List[str]], typer.Option(help="Forza la chiusura di una farmacia in una determinata settimana (es. 1,15)")] = None,
-    pref_open: Annotated[Optional[List[str]], typer.Option(help="Preferisce l'apertura con penalità se chiusa (es. 1,15)")] = None,
-    pref_closed: Annotated[Optional[List[str]], typer.Option(help="Preferisce la chiusura con penalità se aperta (es. 1,15)")] = None,
+    pharmacies: Annotated[Optional[str], typer.Option(help="Elenco farmacie 'id,zona;...' o file .txt. Es: '1,centro; 2,marina'")] = None,
+    force_open: Annotated[Optional[List[str]], typer.Option(help="Forza l'apertura (Strong constraint). Singola, lista con ';' (es. '1,15; 2,16') o file")] = None,
+    force_closed: Annotated[Optional[List[str]], typer.Option(help="Forza la chiusura (Strong constraint). Singola, lista con ';' (es. '1,15') o file")] = None,
+    pref_open: Annotated[Optional[List[str]], typer.Option(help="Preferisce l'apertura (Weak constraint). Singola, lista con ';' (es. '1,15') o file")] = None,
+    pref_closed: Annotated[Optional[List[str]], typer.Option(help="Preferisce la chiusura (Weak constraint). Singola, lista con ';' (es. '1,15') o file")] = None,
     solver: Annotated[SolverType, typer.Option(help="Solver to use")] = SolverType.clingo
 ):
     optimizations = ASP_DIR / "optimizations"
@@ -308,81 +285,53 @@ def main(
         console.print(f"[red]Error: --start-week {start_week_num} cannot be greater than --end-week {final_end_week}.[/red]")
         raise typer.Exit(code=1)
 
-    # Process pharmacies input (can be string or file path)
+    # Estrapoliamo gli ID delle farmacie esclusivamente per la visualizzazione nelle statistiche (UI)
     pharmacies_str = pharmacies
     if not pharmacies_str:
-        # Fallback automatico: se non passate, genera 10 farmacie dividendo le zone 
-        # (indispensabile per soddisfare i vincoli che richiedono la "marina" o "paese")
-        pharmacies_str = ";".join([f"{i},Farmacia{i},{'marina' if i%2==0 else 'paese'}" for i in range(1, 11)])
+        pharmacies_str = ";".join([f"{i},{'marina' if i%2==0 else 'centro'}" for i in range(1, 11)])
 
-    if pharmacies_str and ("/" in pharmacies_str or "\\" in pharmacies_str or pharmacies_str.endswith(".txt") or pharmacies_str.endswith(".csv")):
-        if os.path.exists(pharmacies_str):
+    if pharmacies_str and (os.path.isfile(pharmacies_str) or pharmacies_str.endswith(".txt") or pharmacies_str.endswith(".csv")):
+        try:
             with open(pharmacies_str, "r", encoding="utf-8") as f:
                 pharmacies_str = f.read().strip()
-        else:
-            console.print(f"[yellow]Warning: Pharmacy file '{pharmacies_str}' not found, attempting to treat as string.[/yellow]")
+        except Exception:
+            pass # Ignoriamo eventuali errori. Se ne occuperà log/gestione nel core.
 
     pharmacies_list = None
-    parsed_pharmacies = []
     if pharmacies_str:
         try:
+            parsed_ids = []
             for p in pharmacies_str.split(';'):
                 p = p.strip()
                 if p:
                     parts = p.split(',')
-                    p_id = int(parts[0].strip())
-                    # Se non è specificata una zona, mettiamo "paese" di default
-                    p_zona = parts[2].strip().lower() if len(parts) > 2 else "paese"
-                    parsed_pharmacies.append((p_id, p_zona))
-            pharmacies_list = sorted(list(set([p[0] for p in parsed_pharmacies])))
-        except Exception as e:
-            console.print(f"[red]Error parsing pharmacies string: {e}[/red]")
+                    parsed_ids.append(int(parts[0].strip()))
+            pharmacies_list = sorted(list(set(parsed_ids)))
+        except Exception:
+            pass # In caso di errori strani lascerà None, il fallback farà range(1, 11)
 
     festivities_dict = parse_festivities(festivities, auto_festivities, year)
 
     dynamic_file = None
     try:
-        kwargs = {
-            "festivities_dict": festivities_dict,
-            "prev_year_csv": prev_year,
-            "first_day_of_week": first_day_of_week,
-            "year": year
-        }
-        
-        sig = inspect.signature(generate_dynamic_constraints)
-        if "pharmacies" in sig.parameters and pharmacies_str:
-            kwargs["pharmacies"] = pharmacies_str
-
+        # Chiamata pulita e diretta al core passando i parametri in chiaro
         dynamic_file = generate_dynamic_constraints(
-            reschedule_csv, reschedule_from_num, 
-            unavailable, unavailable_interval,
-            start_week_num, final_end_week,
-            **kwargs
+            reschedule_csv=reschedule_csv,
+            reschedule_from=reschedule_from_num,
+            unavailables=unavailable,
+            unavailable_intervals=unavailable_interval,
+            start_week=start_week_num,
+            end_week=final_end_week,
+            festivities_dict=festivities_dict,
+            prev_year_csv=prev_year,
+            first_day_of_week=first_day_of_week,
+            year=year,
+            pharmacies=pharmacies,
+            force_open=force_open,
+            force_closed=force_closed,
+            pref_open=pref_open,
+            pref_closed=pref_closed
         )
-
-        # INIEZIONE DIRETTA NEL FILE ASP (ORA INCLUDE ANCHE LA ZONA)
-        if dynamic_file and os.path.exists(dynamic_file) and parsed_pharmacies:
-            with open(dynamic_file, "a", encoding="utf-8") as f_out:
-                f_out.write("\n% --- Fatti generati dinamicamente dalla CLI ---\n")
-                for p_id, p_zona in parsed_pharmacies:
-                    f_out.write(f"farmacia({p_id}).\n")
-                    f_out.write(f"zona({p_id},{p_zona}).\n")
-                
-                f_out.write("\n% --- Vincoli Strong e Weak personalizzati (CLI) ---\n")
-                
-                for f, w in parse_fw_constraints(force_open):
-                    f_out.write(f":- not turno({w}, {f}).\n")
-                
-                for f, w in parse_fw_constraints(force_closed):
-                    f_out.write(f":- turno({w}, {f}).\n")
-                
-                for f, w in parse_fw_constraints(pref_open):
-                    f_out.write(f":~ not turno({w}, {f}). [10@0, {f}, {w}]\n")
-                
-                for f, w in parse_fw_constraints(pref_closed):
-                    f_out.write(f":~ turno({w}, {f}). [10@0, {f}, {w}]\n")
-
-                f_out.write("\n")
 
         start_time = time.time()
         if solver == SolverType.clingo:
