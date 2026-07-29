@@ -209,6 +209,27 @@ def run_rich_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic
 
     return output, len(models)
 
+# Helper function to parse lists of Farmacia,Settimana
+def parse_fw_constraints(fw_list):
+    parsed = []
+    if fw_list:
+        for item in fw_list:
+            # Se è un file testuale, ne leggiamo il contenuto
+            if os.path.isfile(item) or item.endswith('.txt') or item.endswith('.csv'):
+                with open(item, 'r', encoding='utf-8') as f:
+                    item = f.read().strip()
+            
+            for element in item.split(';'):
+                element = element.strip()
+                if element:
+                    parts = element.split(',')
+                    if len(parts) >= 2:
+                        try:
+                            parsed.append((int(parts[0].strip()), int(parts[1].strip())))
+                        except ValueError:
+                            pass
+    return parsed
+
 @app.command()
 def main(
     base: Annotated[str, typer.Option(help="The base encoding to use")] = "choice",
@@ -231,6 +252,11 @@ def main(
     year: Annotated[int, typer.Option(help="L'anno per cui si vuole generare il calendario")] = 2025,
     start_week: Annotated[str, typer.Option(help="Settimana di inizio per la schedulazione (numero o 'now')")] = "1",
     end_week: Annotated[Optional[str], typer.Option(help="Settimana di fine per la schedulazione (numero o 'now')")] = None,
+    # new cli options for the preferences:
+    force_open: Annotated[Optional[List[str]], typer.Option(help="Forza l'apertura di una farmacia in una determinata settimana (es. 1,15)")] = None,
+    force_closed: Annotated[Optional[List[str]], typer.Option(help="Forza la chiusura di una farmacia in una determinata settimana (es. 1,15)")] = None,
+    pref_open: Annotated[Optional[List[str]], typer.Option(help="Preferisce l'apertura con penalità se chiusa (es. 1,15)")] = None,
+    pref_closed: Annotated[Optional[List[str]], typer.Option(help="Preferisce la chiusura con penalità se aperta (es. 1,15)")] = None,
     solver: Annotated[SolverType, typer.Option(help="Solver to use")] = SolverType.clingo
 ):
     optimizations = ASP_DIR / "optimizations"
@@ -341,6 +367,21 @@ def main(
                 for p_id, p_zona in parsed_pharmacies:
                     f_out.write(f"farmacia({p_id}).\n")
                     f_out.write(f"zona({p_id},{p_zona}).\n")
+                
+                f_out.write("\n% --- Vincoli Strong e Weak personalizzati (CLI) ---\n")
+                
+                for f, w in parse_fw_constraints(force_open):
+                    f_out.write(f":- not turno({w}, {f}).\n")
+                
+                for f, w in parse_fw_constraints(force_closed):
+                    f_out.write(f":- turno({w}, {f}).\n")
+                
+                for f, w in parse_fw_constraints(pref_open):
+                    f_out.write(f":~ not turno({w}, {f}). [10@0, {f}, {w}]\n")
+                
+                for f, w in parse_fw_constraints(pref_closed):
+                    f_out.write(f":~ turno({w}, {f}). [10@0, {f}, {w}]\n")
+
                 f_out.write("\n")
 
         start_time = time.time()
