@@ -1,4 +1,6 @@
 import os
+import logging
+
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Response
 from fastapi.responses import FileResponse
 from typing import List, Dict, Any
@@ -27,11 +29,13 @@ router = APIRouter()
 @router.get("/settings", response_model=SettingsSchema)
 async def fetch_settings():
     """Returns current user preferences and configuration."""
+    logging.info("[AUDIT] GET /api/settings requested")
     return get_settings()
 
 @router.put("/settings", response_model=SettingsSchema)
 async def update_settings(settings: SettingsSchema):
     """Updates settings and broadcasts SETTINGS_UPDATED to all connected WebSocket clients."""
+    logging.info("[AUDIT] PUT /api/settings updated")
     updated = save_settings(settings)
     await ws_manager.broadcast(WSEvent(type="SETTINGS_UPDATED", payload=updated.model_dump()))
     return updated
@@ -41,18 +45,24 @@ async def update_settings(settings: SettingsSchema):
 @router.get("/schedules")
 async def fetch_schedules_list():
     """Lists available schedule files and companion metadata."""
+    logging.info("[AUDIT] GET /api/schedules requested")
     return list_schedules()
 
 @router.get("/schedules/{year}", response_model=List[ScheduleRowSchema])
 async def fetch_schedule_rows(year: int, mode: str = "compact"):
     """Returns parsed weekly schedule rows for grid rendering."""
+    logging.info(f"[AUDIT] GET /api/schedules/{year} requested (mode={mode})")
     rows = get_schedule_rows(year, mode)
     return rows
+
 
 @router.post("/schedules/generate", status_code=202)
 async def trigger_schedule_generation(req: ScheduleGenerateRequest):
     """Triggers an ASP solver job. Enforces the single-job concurrency lock."""
+    logging.info(f"[AUDIT] Received schedule generation request for year {req.year}")
+    
     if job_manager.is_running:
+        logging.warning(f"[AUDIT] Rejected schedule generation: Job already running (Job ID: {job_manager.current_job_id})")
         raise HTTPException(
             status_code=409,
             detail=f"A scheduling job is already running (Job ID: {job_manager.current_job_id})."
@@ -67,6 +77,7 @@ async def trigger_schedule_generation(req: ScheduleGenerateRequest):
         for fest in fest_list:
             d_val = fest.date.strip() if fest.date else ""
             if not d_val:
+                logging.warning(f"[AUDIT] Rejected schedule generation: Missing festivity date for '{fest.name}'")
                 raise HTTPException(
                     status_code=400,
                     detail=f"Cannot generate schedule: Festivity '{fest.name}' is missing a date while auto festivities is disabled."
@@ -76,6 +87,9 @@ async def trigger_schedule_generation(req: ScheduleGenerateRequest):
         reschedule_bound = req.reschedule_from or req.regenerate_from
         pref_list = req.pharmacy_preferences if req.pharmacy_preferences is not None else settings.pharmacy_preferences
         pharm_list = req.custom_pharmacies if req.custom_pharmacies is not None else settings.pharmacies
+        
+        logging.info(f"[AUDIT] Launching job. Parameters: auto_fest={auto_fest}, pharmacies_count={len(pharm_list)}, pharmacies={pharm_list}")
+        
         job_id = await job_manager.start_job(
             year=req.year,
             time_limit=req.time_limit if req.time_limit is not None else settings.time_limit,
@@ -89,18 +103,23 @@ async def trigger_schedule_generation(req: ScheduleGenerateRequest):
             custom_festivities=fest_list,
             pharmacy_preferences=pref_list,
         )
+        logging.info(f"[AUDIT] Job launched successfully. Job ID: {job_id}")
         return {"status": "job_started", "job_id": job_id}
     except HTTPException:
         raise
     except Exception as e:
+        logging.error(f"[AUDIT] Internal error triggering schedule generation: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/schedules/cancel")
 async def cancel_schedule_generation():
     """Cancels an ongoing scheduling job if one is running."""
+    logging.info("[AUDIT] POST /api/schedules/cancel requested")
     cancelled = await job_manager.cancel_current_job()
     if not cancelled:
+        logging.warning("[AUDIT] Cancel requested but no job was running")
         raise HTTPException(status_code=400, detail="No active scheduling job to cancel.")
+    logging.info("[AUDIT] Scheduling job cancelled successfully")
     return {"status": "job_cancelled"}
 
 
@@ -142,6 +161,7 @@ async def export_schedule(
     pharmacy_label: str = "names"
 ):
     """Downloads the generated CSV or PNG schedule for the given year, formatted according to orientation, type, and pharmacy_label. Automatically cleans up export files."""
+    logging.info(f"[AUDIT] Export requested for year={year}, format={format}, orientation={orientation}, type={type}")
     cleanup_old_export_files(SCHEDULES_DIR, max_age_seconds=300)
 
     csv_file = SCHEDULES_DIR / f"schedule_{year}.csv"
