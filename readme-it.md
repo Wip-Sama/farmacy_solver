@@ -8,6 +8,46 @@ pip install -r requirements.txt
 
 > DLV / DLV2 devono essere presenti nel PATH di sistema con `dlv.exe` e `dlv2.exe`. `clingo` è incluso in `requirements.txt`.
 
+### Installazione tramite Docker e GitHub Container Registry (GHCR)
+
+È possibile eseguire l'applicazione direttamente all'interno di un container scaricando l'immagine preconfigurata dal **GitHub Container Registry (GHCR)** oppure utilizzando Docker Compose.
+
+#### Opzione 1: Scaricare ed eseguire l'immagine ufficiale da GitHub (Consigliato)
+
+Tramite Docker Compose utilizzando il file di configurazione preconfigurato GHCR:
+
+```shell
+# Avvia l'applicazione con l'immagine precompilata da GitHub Container Registry
+docker compose -f docker-compose.ghcr.yml up -d
+```
+
+Oppure direttamente via CLI Docker:
+
+```shell
+# Scarica l'ultima versione dell'immagine da GitHub Container Registry
+docker pull ghcr.io/wip-sama/farmacy_solver:latest
+
+# Avvia il container (espone l'interfaccia Web e le API REST sulla porta 8001)
+docker run -d \
+  --name pharmacy_solver_app \
+  -p 8001:8001 \
+  -v pharmacy_data:/app/data \
+  ghcr.io/wip-sama/farmacy_solver:latest
+```
+
+Una volta avviato, l'interfaccia grafica Web sarà accessibile all'indirizzo `http://localhost:8001` e la documentazione API REST a `http://localhost:8001/docs`.
+
+#### Opzione 2: Compilazione ed esecuzione locale con Docker Compose
+
+```shell
+# Compila ed avvia il container in locale con Docker Compose
+docker compose up -d --build
+```
+
+In alternativa, puoi utilizzare gli script automatici dalla radice del progetto:
+- **Windows (PowerShell):** `.\scripts\docker-run.ps1`
+- **Linux / macOS (Bash):** `./scripts/docker-run.sh`
+
 ### Utilizzo
 
 Runner standard:

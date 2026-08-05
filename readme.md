@@ -8,6 +8,46 @@ pip install -r requirements.txt
 
 > DLV / DLV2 needs to be on the system path with dlv.exe and dlv2.exe, clingo is included in the requirements.txt
 
+### Docker & GitHub Container Registry Installation
+
+You can run the application directly inside a container using the pre-built image from the **GitHub Container Registry (GHCR)** or using Docker Compose.
+
+#### Option 1: Run Pre-built Image from GitHub Container Registry (Recommended)
+
+Run directly via Docker Compose using the dedicated GHCR compose configuration:
+
+```shell
+# Launch using pre-built image from GitHub Container Registry
+docker compose -f docker-compose.ghcr.yml up -d
+```
+
+Or via direct Docker CLI:
+
+```shell
+# Pull the latest image from GitHub Container Registry
+docker pull ghcr.io/wip-sama/farmacy_solver:latest
+
+# Run container (exposes Web UI & REST API on port 8001)
+docker run -d \
+  --name pharmacy_solver_app \
+  -p 8001:8001 \
+  -v pharmacy_data:/app/data \
+  ghcr.io/wip-sama/farmacy_solver:latest
+```
+
+Once started, access the Web UI at `http://localhost:8001` and REST API documentation at `http://localhost:8001/docs`.
+
+#### Option 2: Build and Run Locally with Docker Compose
+
+```shell
+# Build and launch application container locally
+docker compose up -d --build
+```
+
+Or run automated helper scripts from project root:
+- **Windows (PowerShell):** `.\scripts\docker-run.ps1`
+- **Linux / macOS (Bash):** `./scripts/docker-run.sh`
+
 ### Usage
 
 Standard runner:

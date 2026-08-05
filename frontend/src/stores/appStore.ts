@@ -3,6 +3,13 @@ import { ref } from 'vue'
 import { useWebSocket } from '@vueuse/core'
 import { toast } from 'vue-sonner'
 
+const auditLog = (msg: string, data?: any) => {
+  if (import.meta.env.VITE_ENABLE_AUDIT_LOGS === 'true') {
+    if (data) console.info(`[AUDIT] ${msg}`, data)
+    else console.info(`[AUDIT] ${msg}`)
+  }
+}
+
 export interface CustomFestivity {
   name: string
   date: string
@@ -119,10 +126,12 @@ export const useAppStore = defineStore('app', () => {
 
     if (event.type === 'SETTINGS_UPDATED') {
       settings.value = { ...settings.value, ...event.payload }
+      auditLog('Settings updated via WS', settings.value)
     } else if (event.type === 'JOB_STARTED') {
       isJobRunning.value = true
       isProgressModalOpen.value = true
       jobProgressLines.value = [event.payload.message || 'Starting ASP solver job...']
+      auditLog('Job started', event.payload)
       toast.info(`⚡ Generating schedule for ${event.payload.year}...`, {
         duration: Infinity,
         id: 'schedule-generating',
@@ -137,6 +146,7 @@ export const useAppStore = defineStore('app', () => {
       }
     } else if (event.type === 'JOB_COMPLETED') {
       isJobRunning.value = false
+      auditLog('Job completed', event.payload)
       toast.dismiss('schedule-generating')
       toast.success(`✅ Schedule for ${event.payload.year} generated successfully!`, {
         description: `Completed in ${event.payload.execution_time_seconds}s`
@@ -145,6 +155,7 @@ export const useAppStore = defineStore('app', () => {
       fetchScheduleRows(settings.value.year)
     } else if (event.type === 'JOB_FAILED') {
       isJobRunning.value = false
+      auditLog('Job failed', event.payload)
       toast.dismiss('schedule-generating')
       toast.error(`❌ Scheduling failed for ${event.payload.year}`, {
         description: event.payload.error
@@ -248,6 +259,7 @@ export const useAppStore = defineStore('app', () => {
       ...payload
     }
 
+    auditLog('Triggering schedule generation with payload:', bodyData)
 
     try {
       const res = await fetch(`${API_BASE}/schedules/generate`, {

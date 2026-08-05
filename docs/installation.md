@@ -106,29 +106,54 @@ Access the application in your web browser:
 
 ## 6. Docker Container Deployment
 
-You can build and run the entire application (Backend FastAPI + Frontend SPA) inside a Docker container.
+You can deploy and run the entire application (Backend FastAPI + Frontend SPA) inside a Docker container using either the pre-built image from **GitHub Container Registry (GHCR)** or building locally.
 
-### Build Docker Image
-```powershell
-.\scripts\docker-build.ps1
+### Method A: Pull & Run Pre-built Image from GitHub Container Registry (GHCR)
+
+The repository automatically builds and publishes Docker images to GHCR. You can start it using Docker Compose or standalone Docker CLI:
+
+1. **Using Docker Compose with pre-built image:**
+   ```bash
+   docker compose -f docker-compose.ghcr.yml up -d
+   ```
+
+2. **Or via Docker CLI:**
+   ```bash
+   # Pull the latest image
+   docker pull ghcr.io/wip-sama/farmacy_solver:latest
+
+   # Run container
+   docker run -d \
+     --name pharmacy_solver_app \
+     -p 8001:8001 \
+     -v pharmacy_data:/app/data \
+     ghcr.io/wip-sama/farmacy_solver:latest
+   ```
+
+### Method B: Build & Run Locally with Docker / Docker Compose
+
+To compile the multi-stage Docker image and start the container locally:
+
+```bash
+docker compose up -d --build
 ```
 
-### Launch Container
-```powershell
-.\scripts\docker-run.ps1
-```
+Alternatively, use the provided helper scripts:
+- **Windows (PowerShell):** `.\scripts\docker-build.ps1` and `.\scripts\docker-run.ps1`
+- **Linux / macOS (Bash):** `./scripts/docker-build.sh` and `./scripts/docker-run.sh`
 
 ### Volume Isolation Options
 - **Internal Managed Volume (Isolated)**: By default, `docker-compose.yml` mounts a dedicated internal Docker volume `pharmacy_data:/app/data` (declared with `VOLUME ["/app/data"]` in `Dockerfile`). This keeps application settings and generated schedules completely isolated within Docker container storage.
-- **Host Bind-Mount**: If you prefer direct access to local `./data` files on your host filesystem, uncomment `- ./data:/app/data` in `docker-compose.yml`.
+- **Host Bind-Mount**: If you prefer direct access to local `./data` files on your host filesystem, uncomment `- ./data:/app/data` in `docker-compose.yml` or specify `-v $(pwd)/data:/app/data` in `docker run`.
 
 ### Automated GitHub Actions CI/CD
 A GitHub Actions workflow is included at `.github/workflows/docker-publish.yml`. On every `push` to the `main` branch:
-1. Docker image is automatically compiled (multi-stage frontend + ASP solver runner).
-2. Image is published to **GitHub Container Registry (GHCR)** at `ghcr.io/<owner>/<repo>:latest` and tagged with the commit SHA.
+1. Multi-stage Docker image is automatically compiled (frontend SPA + ASP solver runner).
+2. Image is published to **GitHub Container Registry (GHCR)** at `ghcr.io/wip-sama/farmacy_solver:latest` and tagged with short commit SHAs (`sha-xxxxxxx`).
 
 When running in Docker, access points are logged to standard output:
 - **Application Web UI:** `http://localhost:8001/`
 - **FastAPI REST API Docs:** `http://localhost:8001/docs`
 - **REST API Base:** `http://localhost:8001/api`
+
 

@@ -19,9 +19,11 @@ def get_settings() -> SettingsSchema:
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
+            logging.info("[AUDIT] Loaded settings from settings.json")
             return SettingsSchema(**data)
         except Exception as e:
-            logging.error(f"Failed to load settings.json: {e}")
+            logging.error(f"[AUDIT] Failed to load settings.json: {e}")
+    logging.info("[AUDIT] settings.json not found; using default SettingsSchema")
     return SettingsSchema()
 
 def save_settings(settings: SettingsSchema) -> SettingsSchema:
@@ -32,6 +34,7 @@ def save_settings(settings: SettingsSchema) -> SettingsSchema:
     with open(temp_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     temp_path.replace(SETTINGS_FILE)
+    logging.info("[AUDIT] Successfully saved settings to settings.json")
     return settings
 
 def list_schedules() -> List[Dict[str, Any]]:

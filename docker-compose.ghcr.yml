@@ -1,9 +1,6 @@
 services:
   pharmacy-solver:
     image: ghcr.io/wip-sama/farmacy_solver:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
     container_name: pharmacy_solver_app
     ports:
       - "8001:8001"
