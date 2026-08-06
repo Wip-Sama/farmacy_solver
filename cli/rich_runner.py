@@ -223,8 +223,6 @@ def main(
     first_day_of_week: Annotated[str, typer.Option("--first-day-of-the-week", "--fdotw", help="First day of the week (monday, saturday, sunday, 0..6)")] = "monday",
     reschedule_csv: Annotated[Optional[str], typer.Option(help="Path to the CSV file of a previous run")] = None,
     reschedule_from: Annotated[Optional[str], typer.Option(help="Week number from which to reschedule (number or 'now')")] = None,
-    unavailable: Annotated[Optional[List[str]], typer.Option(help="List of unavailable pharmacies (e.g., 3,15 4,16)")] = None,
-    unavailable_interval: Annotated[Optional[List[str]], typer.Option(help="List of unavailable intervals (e.g., 3,15,18)")] = None,
     festivities: Annotated[Optional[List[str]], typer.Option(help="Custom festivities in format 'name,start_date,finish_date' or 'name,date'")] = None,
     auto_festivities: Annotated[bool, typer.Option(help="Automatically generate Italian national festivities for the year")] = False,
     prev_year: Annotated[Optional[str], typer.Option(help="Path to previous year's CSV schedule")] = None,
@@ -320,8 +318,6 @@ def main(
         dynamic_file = generate_dynamic_constraints(
             reschedule_csv=reschedule_csv,
             reschedule_from=reschedule_from_num,
-            unavailables=unavailable,
-            unavailable_intervals=unavailable_interval,
             start_week=start_week_num,
             end_week=final_end_week,
             festivities_dict=festivities_dict,
