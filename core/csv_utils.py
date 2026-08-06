@@ -168,15 +168,18 @@ def read_csv_schedule(csv_path: str):
             for idx, col_name in enumerate(h_lower):
                 if col_name.startswith('f') and col_name[1:].isdigit():
                     pharmacy_cols.append((int(col_name[1:]), idx))
-
+            
             has_pharmacy_cols = False
             for f_id, idx in pharmacy_cols:
                 if idx < len(row) and str(row[idx]).strip() == "1":
                     schedule[week_num].add(f_id)
                     has_pharmacy_cols = True
                     if fest_str:
-                        past_festivities.add((fest_str.lower(), f_id))
-
+                        for fest_item in fest_str.split('/'):
+                            f_clean = fest_item.strip().lower()
+                            if f_clean:
+                                past_festivities.add((f_clean, f_id))
+            
             if not has_pharmacy_cols:
                 turn_col_idx = None
                 for tname in ['farmacie di turno', 'farmacie']:
@@ -188,8 +191,11 @@ def read_csv_schedule(csv_path: str):
                     f_ids = extract_pharmacy_ids(farm_str, pharmacy_name_to_id)
                     schedule[week_num].update(f_ids)
                     if fest_str:
-                        for fid in f_ids:
-                            past_festivities.add((fest_str.lower(), fid))
+                        for fest_item in fest_str.split('/'):
+                            f_clean = fest_item.strip().lower()
+                            if f_clean:
+                                for fid in f_ids:
+                                    past_festivities.add((f_clean, fid))
 
     return schedule, metadata, pharmacy_map, past_festivities, raw_rows
 

@@ -1,5 +1,6 @@
 import sys
 import os
+import ntpath
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import argparse
 import logging
@@ -23,6 +24,18 @@ from core.terminal_display import (
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+
+def has_explicit_path(path_value):
+    if not path_value:
+        return False
+    return bool(os.path.dirname(path_value) or ntpath.dirname(path_value))
+
+
+def ensure_parent_dir(path_value):
+    parent = os.path.dirname(path_value) or ntpath.dirname(path_value)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
 
 def main():
     optimizations = ASP_DIR / "optimizations"
@@ -88,11 +101,11 @@ def main():
 
     # Automatically route CSV files to a dedicated 'schedules' folder if no path is specified
     csv_dir = "schedules"
-    if args.csv and not os.path.dirname(args.csv):
+    if args.csv and not has_explicit_path(args.csv):
         args.csv = os.path.join(csv_dir, args.csv)
-    if args.reschedule_csv and not os.path.dirname(args.reschedule_csv):
+    if args.reschedule_csv and not has_explicit_path(args.reschedule_csv):
         args.reschedule_csv = os.path.join(csv_dir, args.reschedule_csv)
-    if args.prev_year and not os.path.dirname(args.prev_year):
+    if args.prev_year and not has_explicit_path(args.prev_year):
         args.prev_year = os.path.join(csv_dir, args.prev_year)
 
     # Default to clingo if no solver is specified
@@ -193,8 +206,7 @@ def main():
             'opt': args.opt,
             'time': elapsed_time
         }
-        if os.path.dirname(args.csv):
-            os.makedirs(os.path.dirname(args.csv), exist_ok=True)
+        ensure_parent_dir(args.csv)
         generate_csv_report(
             schedule, args.csv, run_info, args.year, festivo_schedule, festivities_dict,
             csv_mode=args.csv_mode, csv_direction=args.csv_direction, csv_map_pharmacies=args.csv_map_pharmacies,

@@ -4,6 +4,7 @@ import csv
 import datetime
 import os
 import re
+import shlex
 import subprocess
 import sys
 
@@ -44,19 +45,24 @@ def parse_validator_summary(output):
     """Return a short summary for validator output. If validation failed, include a brief preview
     of the validator error lines (truncated) so report cells contain actionable information.
     """
-    lines = [line.rstrip() for line in output.splitlines() if line.strip()]
+    lines = [
+        clean_validation_text(line.rstrip())
+        for line in output.splitlines()
+        if line.strip()
+    ]
+    lines = [line for line in lines if line and not is_separator_line(line)]
     # Prefer a SUCCESS line if present
     success_line = next((line for line in lines if line.startswith("SUCCESS:")), None)
     if success_line:
-        return success_line
-
+        return success_line.removeprefix("SUCCESS:").strip()
+    
     # Find FAILURE and include following error lines as a short preview
     failure_idx = next((i for i, line in enumerate(lines) if line.startswith("FAILURE:")), None)
     if failure_idx is not None:
-        failure_line = lines[failure_idx]
+        failure_line = lines[failure_idx].removeprefix("FAILURE:").strip()
         details = []
-        for line in lines[failure_idx + 1 : failure_idx + 1 + 20]:
-            stripped = line.strip()
+        for line in lines[failure_idx + 1: failure_idx + 1 + 20]:
+            stripped = clean_validation_text(line.strip())
             if not stripped:
                 continue
             # Normalized error lines from validator start with "[ERROR]" or a dash
@@ -67,37 +73,65 @@ def parse_validator_summary(output):
             if len(details) >= 10:
                 break
         if details:
-            preview = " | ".join(details)
+            preview = merge_validation_details(details)
             if len(preview) > 500:
                 preview = preview[:497] + "..."
             return f"{failure_line} -- {preview}"
         return failure_line
-
+    
     # Fallback to last non-empty line or a default message
     return lines[-1] if lines else "No validator output"
+
+
+def is_separator_line(text):
+    stripped = text.strip()
+    return bool(stripped) and set(stripped) <= {"=", "-", "_"}
+
+
+def clean_validation_text(text):
+    """Normalize validation output for single-cell CSV and Markdown reports."""
+    if text is None:
+        return ""
+    text = strip_ansi(str(text))
+    text = text.replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    text = re.sub(r"\s+", " ", text).strip()
+    if is_separator_line(text):
+        return ""
+    return text
+
+
+def merge_validation_details(parts):
+    cleaned = [clean_validation_text(part) for part in parts]
+    return " | ".join(part for part in cleaned if part)
+
+
+def normalize_validation_result(result):
+    if result in ("VALID", "INVALID"):
+        return result
+    return "UNCHECKED"
 
 
 def run_validation(csv_path, prev_year_csv):
     """Run validate_csv.py and return (result, detail) with robust statuses."""
     if not os.path.exists(csv_path):
-        return "NOT_RUN_NO_CSV", f"CSV output missing: {csv_path}"
-
+        return "UNCHECKED", f"CSV output missing: {csv_path}"
+    
     cmd = [sys.executable, VALIDATE_SCRIPT_PATH, csv_path]
     if prev_year_csv:
         cmd.extend(["--prev-year", prev_year_csv])
-
+    
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     except OSError as exc:
-        return "VALIDATION_ERROR", f"Validator execution error: {exc}"
-
+        return "UNCHECKED", f"Validator execution error: {exc}"
+    
     output = strip_ansi(f"{result.stdout}\n{result.stderr}".strip())
     summary = parse_validator_summary(output)
     if result.returncode == 0:
         return "VALID", summary
     if result.returncode == 1:
         return "INVALID", summary
-    return "VALIDATION_ERROR", f"Unexpected validator exit code {result.returncode}: {summary}"
+    return "UNCHECKED", f"Unexpected validator exit code {result.returncode}: {summary}"
 
 
 def compute_pc_metrics(csv_path, pc_targets, pc_weeks):
@@ -106,23 +140,23 @@ def compute_pc_metrics(csv_path, pc_targets, pc_weeks):
         return "N/A", "N/A", "N/A", "N/A"
     if not os.path.exists(csv_path):
         return "N/A", "N/A", "N/A", "N/A"
-
+    
     try:
         schedule, _, _, _, _ = read_csv_schedule(csv_path)
     except Exception:
         return "N/A", "N/A", "N/A", "N/A"
-
+    
     target_count = len(pc_targets) * len(pc_weeks)
     if target_count == 0:
         return "N/A", "N/A", "N/A", "N/A"
-
+    
     respected = 0
     for pharmacy in pc_targets:
         for week in pc_weeks:
             assigned = pharmacy in schedule.get(week, set())
             if not assigned:
                 respected += 1
-
+    
     all_respected = respected == target_count
     rate = (respected / target_count) * 100.0
     return str(all_respected), f"{rate:.2f}%", str(target_count), str(respected)
@@ -142,7 +176,7 @@ def parse_run_metrics(raw_output):
     media_match = re.search(r"Media farmacie per settimana:\s*([\d\.]+)", raw_output)
     ottimizzazione_match = re.search(r"Valore di Ottimizzazione.*?:\s*(\d+)", raw_output)
     time_match = re.search(r"Computation time:\s*([\d\.]+)\s*seconds", raw_output, re.IGNORECASE)
-
+    
     return {
         "farmacia_matches": farmacia_matches,
         "totale": totale_match.group(1) if totale_match else "N/A",
@@ -173,40 +207,42 @@ def execute_and_parse(task):
     time_limit = task["time_limit"]
     profile = task["clingo_profile"]
     family = get_run_family(run_type)
-
+    
     print(f"  [STARTING] Profile: {profile} | Run: {run_type} | TL: {time_limit}s | Desc: {desc}")
-
+    
     result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     raw_output = strip_ansi(result.stdout)
-
+    
     metrics = parse_run_metrics(raw_output)
     run_status = classify_run_status(result.returncode, raw_output)
-
+    
     validation_result, validation_details = run_validation(
         task["csv_output"],
         task.get("validate_prev_year"),
     )
     # If CSV wasn't produced, provide a short runner output excerpt to help debugging.
-    if validation_result == "NOT_RUN_NO_CSV":
+    if validation_result == "UNCHECKED" and validation_details.startswith("CSV output missing:"):
         excerpt = raw_output.strip() if raw_output else ""
         if len(excerpt) > 500:
             excerpt = excerpt[:497] + "..."
-        validation_details = f"{validation_details} | Runner output excerpt: {excerpt}"
-
+        validation_details = merge_validation_details([validation_details, f"Runner output excerpt: {excerpt}"])
+    else:
+        validation_details = clean_validation_text(validation_details)
+    
     all_pc_respected, pc_respect_rate, pc_target_count, pc_respected_count = compute_pc_metrics(
         task["csv_output"],
         task.get("pc_targets", []),
         task.get("pc_weeks", []),
     )
-
+    
     detail_csv = task["detail_output"]
     os.makedirs(os.path.dirname(detail_csv), exist_ok=True)
     local_master_data = []
-
+    
     with open(detail_csv, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["Farmacia", "Turni Assegnati"])
-
+        
         for farmacia, turni in metrics["farmacia_matches"]:
             writer.writerow([farmacia, turni])
             local_master_data.append([
@@ -222,7 +258,6 @@ def execute_and_parse(task):
                 metrics["media"],
                 metrics["ottimizzazione"],
                 metrics["comp_time"],
-                run_status,
                 result.returncode,
                 validation_result,
                 validation_details,
@@ -231,7 +266,7 @@ def execute_and_parse(task):
                 pc_target_count,
                 pc_respected_count,
             ])
-
+        
         if not metrics["farmacia_matches"]:
             local_master_data.append([
                 profile,
@@ -246,7 +281,6 @@ def execute_and_parse(task):
                 metrics["media"],
                 metrics["ottimizzazione"],
                 metrics["comp_time"],
-                run_status,
                 result.returncode,
                 validation_result,
                 validation_details,
@@ -255,7 +289,7 @@ def execute_and_parse(task):
                 pc_target_count,
                 pc_respected_count,
             ])
-
+        
         writer.writerow([])
         writer.writerow(["Metrica", "Valore"])
         writer.writerow(["Totale complessivo turni assegnati", metrics["totale"]])
@@ -263,7 +297,6 @@ def execute_and_parse(task):
         writer.writerow(["Valore di Ottimizzazione", metrics["ottimizzazione"]])
         writer.writerow(["Computation time (seconds)", metrics["comp_time"]])
         writer.writerow(["Constraint Description", desc])
-        writer.writerow(["Run Status", run_status])
         writer.writerow(["Run Exit Code", result.returncode])
         writer.writerow(["Validation Result", validation_result])
         writer.writerow(["Validation Details", validation_details])
@@ -271,7 +304,7 @@ def execute_and_parse(task):
         writer.writerow(["PC_Respect_Rate", pc_respect_rate])
         writer.writerow(["PC_Target_Count", pc_target_count])
         writer.writerow(["PC_Respected_Count", pc_respected_count])
-
+    
     run_summary = {
         "profile": profile,
         "family": family,
@@ -290,9 +323,9 @@ def execute_and_parse(task):
         "pc_target_count": pc_target_count,
         "pc_respected_count": pc_respected_count,
     }
-
-    print(f"  [FINISHED] Profile: {profile} | Run: {run_type} | TL: {time_limit}s | Status: {run_status}")
-
+    
+    print(f"  [FINISHED] Profile: {profile} | Run: {run_type} | TL: {time_limit}s | Validation: {validation_result}")
+    
     return {
         "run_type": run_type,
         "is_base": task.get("is_base", False),
@@ -308,7 +341,7 @@ def build_tasks_for_profile(profile, time_limits, runs_dir, fc_weeks, pc_weeks, 
     tasks_grouped = []
     schedule_2025_path = os.path.join(str(SCHEDULES_DIR), "schedule_2025.csv")
     schedule_2026_path = os.path.join(str(SCHEDULES_DIR), "schedule_2026.csv")
-
+    
     for y in [2024, 2025, 2026, 2027]:
         group = []
         for tl in time_limits:
@@ -350,13 +383,13 @@ def build_tasks_for_profile(profile, time_limits, runs_dir, fc_weeks, pc_weeks, 
                 }
             )
         tasks_grouped.append(group)
-
+    
     grp_resched = []
     grp_corrected = []
     for tl in time_limits:
         resched_csv = os.path.join(runs_dir, f"rescheduled2026_{tl}.csv")
         corrected_csv = os.path.join(runs_dir, f"corrected2026_{tl}.csv")
-
+        
         grp_resched.append(
             {
                 "cmd": [
@@ -426,12 +459,12 @@ def build_tasks_for_profile(profile, time_limits, runs_dir, fc_weeks, pc_weeks, 
             }
         )
     tasks_grouped.extend([grp_resched, grp_corrected])
-
+    
     for config in constraint_configs:
         group = []
         fc_str = generate_constraint(config["fc"], fc_weeks)
         pc_str = generate_constraint(config["pc"], pc_weeks)
-
+        
         for tl in time_limits:
             csv_output = os.path.join(runs_dir, f"constraint_{config['name']}_{tl}.csv")
             prev_year_csv = os.path.join(runs_dir, f"test2025_{tl}.csv")
@@ -456,7 +489,7 @@ def build_tasks_for_profile(profile, time_limits, runs_dir, fc_weeks, pc_weeks, 
                 cmd.extend(["--force-closed", fc_str])
             if pc_str:
                 cmd.extend(["--pref-closed", pc_str])
-
+            
             group.append(
                 {
                     "cmd": cmd,
@@ -474,7 +507,7 @@ def build_tasks_for_profile(profile, time_limits, runs_dir, fc_weeks, pc_weeks, 
                 }
             )
         tasks_grouped.append(group)
-
+    
     return tasks_grouped
 
 
@@ -495,11 +528,15 @@ def try_parse_float(value):
 def markdown_table(headers, rows):
     if not rows:
         return "_No data available._\n"
+    
+    def cell(value):
+        return clean_validation_text(value).replace("|", "\\|")
+    
     out = []
-    out.append("| " + " | ".join(headers) + " |")
+    out.append("| " + " | ".join(cell(header) for header in headers) + " |")
     out.append("|" + "|".join(["---"] * len(headers)) + "|")
     for row in rows:
-        out.append("| " + " | ".join(str(cell) for cell in row) + " |")
+        out.append("| " + " | ".join(cell(value) for value in row) + " |")
     return "\n".join(out) + "\n"
 
 
@@ -508,15 +545,18 @@ def compute_profile_aggregate(run_summaries):
     success = sum(1 for r in run_summaries if r["run_status"] == "SUCCESS")
     failed = sum(1 for r in run_summaries if r["run_status"] == "FAILED")
     timeout = sum(1 for r in run_summaries if r["run_status"] == "TIMEOUT_NO_MODEL")
-
+    
     validation_runs = [r for r in run_summaries if r["validation_result"] in ("VALID", "INVALID")]
     validation_pass = sum(1 for r in validation_runs if r["validation_result"] == "VALID")
+    valid = validation_pass
+    invalid = sum(1 for r in run_summaries if r["validation_result"] == "INVALID")
+    unchecked = total - valid - invalid
     validation_rate = (validation_pass / len(validation_runs) * 100.0) if validation_runs else None
-
+    
     successful_runs = [r for r in run_summaries if r["run_status"] == "SUCCESS"]
     costs = [try_parse_int(r["optimization"]) for r in successful_runs]
     costs = [c for c in costs if c is not None]
-
+    
     base_by_year = {}
     for year in [2024, 2025, 2026, 2027]:
         year_costs = [
@@ -526,7 +566,7 @@ def compute_profile_aggregate(run_summaries):
         ]
         year_costs = [c for c in year_costs if c is not None]
         base_by_year[year] = min(year_costs) if year_costs else None
-
+    
     constraint_costs = [
         try_parse_int(r["optimization"])
         for r in successful_runs
@@ -534,7 +574,7 @@ def compute_profile_aggregate(run_summaries):
     ]
     constraint_costs = [c for c in constraint_costs if c is not None]
     best_constraint_cost = min(constraint_costs) if constraint_costs else None
-
+    
     pc_rates = []
     for r in run_summaries:
         if r["family"] != "Constraint" or r["pc_respect_rate"] in ("N/A", "", None):
@@ -544,16 +584,19 @@ def compute_profile_aggregate(run_summaries):
         if pc_rate is not None:
             pc_rates.append(pc_rate)
     avg_pc_rate = (sum(pc_rates) / len(pc_rates)) if pc_rates else None
-
+    
     times = [try_parse_float(r["computation_time"]) for r in successful_runs]
     times = [t for t in times if t is not None]
     avg_time = (sum(times) / len(times)) if times else None
-
+    
     return {
         "total_runs": total,
         "success_runs": success,
         "failed_runs": failed,
         "timeout_runs": timeout,
+        "valid_runs": valid,
+        "invalid_runs": invalid,
+        "unchecked_runs": unchecked,
         "validation_runs": len(validation_runs),
         "validation_pass": validation_pass,
         "validation_rate": validation_rate,
@@ -566,7 +609,8 @@ def compute_profile_aggregate(run_summaries):
     }
 
 
-def write_profile_reports(profile, profile_dir, master_rows, summary_matrix, run_summaries, time_limits, fc_weeks, pc_weeks, constraint_configs):
+def write_profile_reports(profile, profile_dir, master_rows, summary_matrix, run_summaries, time_limits, fc_weeks,
+                          pc_weeks, constraint_configs):
     master_filename = os.path.join(profile_dir, "master_report_all_data.csv")
     with open(master_filename, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -584,7 +628,6 @@ def write_profile_reports(profile, profile_dir, master_rows, summary_matrix, run
                 "Media_Per_Settimana",
                 "Valore_Ottimizzazione",
                 "Computation_Time_sec",
-                "Run_Status",
                 "Run_Exit_Code",
                 "Validation_Result",
                 "Validation_Details",
@@ -595,7 +638,7 @@ def write_profile_reports(profile, profile_dir, master_rows, summary_matrix, run
             ]
         )
         writer.writerows(master_rows)
-
+    
     summary_filename = os.path.join(profile_dir, "valore_di_ottimizzazione_matrix.csv")
     years = [2024, 2025, 2026, 2027]
     with open(summary_filename, "w", newline="", encoding="utf-8") as f:
@@ -606,9 +649,9 @@ def write_profile_reports(profile, profile_dir, master_rows, summary_matrix, run
             for y in years:
                 row.append(summary_matrix.get((y, tl), ""))
             writer.writerow(row)
-
+    
     aggregate = compute_profile_aggregate(run_summaries)
-
+    
     base_rows = []
     resched_rows = []
     corrected_rows = []
@@ -618,9 +661,8 @@ def write_profile_reports(profile, profile_dir, master_rows, summary_matrix, run
             r["year"],
             r["time_limit"],
             r["run_type"],
-            r["run_status"],
             r["optimization"],
-            r["validation_result"],
+            normalize_validation_result(r["validation_result"]),
             r["validation_details"],
         ]
         if r["family"] == "Base":
@@ -639,43 +681,44 @@ def write_profile_reports(profile, profile_dir, master_rows, summary_matrix, run
                     r["pc_respected_count"],
                 ]
             )
-
+    
     report_filename = os.path.join(profile_dir, "report.md")
     with open(report_filename, "w", encoding="utf-8") as rf:
         rf.write("# Scheduling Execution Report\n\n")
         rf.write(f"**Date Generated:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
         rf.write(f"**Clingo Profile:** `{profile}` ({CLINGO_PROFILES[profile]})\n\n")
-
+        
         rf.write("## Execution Summary\n")
         rf.write(f"- Total runs: **{aggregate['total_runs']}**\n")
-        rf.write(f"- Success: **{aggregate['success_runs']}**\n")
-        rf.write(f"- Failed: **{aggregate['failed_runs']}**\n")
-        rf.write(f"- Timeout no model: **{aggregate['timeout_runs']}**\n")
+        rf.write(f"- VALID: **{aggregate['valid_runs']}**\n")
+        rf.write(f"- INVALID: **{aggregate['invalid_runs']}**\n")
+        rf.write(f"- UNCHECKED: **{aggregate['unchecked_runs']}**\n")
         if aggregate["validation_rate"] is not None:
-            rf.write(f"- Validation pass rate: **{aggregate['validation_rate']:.2f}%** ({aggregate['validation_pass']}/{aggregate['validation_runs']})\n")
+            rf.write(
+                f"- Validation pass rate: **{aggregate['validation_rate']:.2f}%** ({aggregate['validation_pass']}/{aggregate['validation_runs']})\n")
         else:
             rf.write("- Validation pass rate: **N/A**\n")
         rf.write(
             f"- Optimization cost range (successful runs): **{aggregate['best_cost']} .. {aggregate['worst_cost']}**\n\n"
         )
-
+        
         rf.write("## Week Configurations (Mid-Year Simulation)\n")
         rf.write(f"- **Forced Closed (FC) Weeks (8 weeks):** Weeks {fc_weeks[0]} to {fc_weeks[-1]}\n")
         rf.write(f"- **Preferably Closed (PC) Weeks (2 weeks):** Weeks {pc_weeks[0]} to {pc_weeks[-1]}\n\n")
-
+        
         rf.write("## Base Runs\n")
         rf.write(markdown_table(
-            ["Year", "TL", "Run Type", "Status", "Cost", "Validation", "Validation Summary"],
+            ["Year", "TL", "Run Type", "Cost", "Validation", "Validation Summary"],
             base_rows,
         ))
         rf.write("\n## Reschedule Runs\n")
         rf.write(markdown_table(
-            ["Year", "TL", "Run Type", "Status", "Cost", "Validation", "Validation Summary"],
+            ["Year", "TL", "Run Type", "Cost", "Validation", "Validation Summary"],
             resched_rows,
         ))
         rf.write("\n## Corrected Runs\n")
         rf.write(markdown_table(
-            ["Year", "TL", "Run Type", "Status", "Cost", "Validation", "Validation Summary"],
+            ["Year", "TL", "Run Type", "Cost", "Validation", "Validation Summary"],
             corrected_rows,
         ))
         rf.write("\n## Constraint Runs\n")
@@ -684,7 +727,6 @@ def write_profile_reports(profile, profile_dir, master_rows, summary_matrix, run
                 "Year",
                 "TL",
                 "Run Type",
-                "Status",
                 "Cost",
                 "Validation",
                 "Validation Summary",
@@ -695,7 +737,7 @@ def write_profile_reports(profile, profile_dir, master_rows, summary_matrix, run
             ],
             constraint_rows,
         ))
-
+        
         rf.write("\n## Constraint Scenario Definitions\n")
         rf.write("| Scenario Name | Description | FC Pharmacies | PC Pharmacies |\n")
         rf.write("|---|---|---|---|\n")
@@ -703,7 +745,7 @@ def write_profile_reports(profile, profile_dir, master_rows, summary_matrix, run
             fc_list = ", ".join(map(str, config["fc"])) if config["fc"] else "None"
             pc_list = ", ".join(map(str, config["pc"])) if config["pc"] else "None"
             rf.write(f"| {config['name']} | {config['desc']} | {fc_list} | {pc_list} |\n")
-
+    
     return master_filename, summary_filename, report_filename, aggregate
 
 
@@ -717,9 +759,9 @@ def write_general_report(report_path, profile_aggregates):
             [
                 profile,
                 agg.get("total_runs", "N/A"),
-                agg.get("success_runs", "N/A"),
-                agg.get("failed_runs", "N/A"),
-                agg.get("timeout_runs", "N/A"),
+                agg.get("valid_runs", "N/A"),
+                agg.get("invalid_runs", "N/A"),
+                agg.get("unchecked_runs", "N/A"),
                 (
                     f"{agg['validation_rate']:.2f}%"
                     if agg.get("validation_rate") is not None
@@ -743,7 +785,7 @@ def write_general_report(report_path, profile_aggregates):
                 agg.get("best_constraint_cost", "N/A"),
             ]
         )
-
+    
     default_best_constraint = profile_aggregates.get("default", {}).get("best_constraint_cost")
     delta_rows = []
     if default_best_constraint is not None:
@@ -754,13 +796,14 @@ def write_general_report(report_path, profile_aggregates):
             else:
                 delta = best_constraint - default_best_constraint
             delta_rows.append([profile, default_best_constraint, best_constraint, delta])
-
+    
     with open(report_path, "w", encoding="utf-8") as gr:
         gr.write("# General Clingo Profile Comparison Report\n\n")
         gr.write(f"**Date Generated:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
         gr.write("## Profile Outcome Summary\n")
         gr.write(markdown_table(
-            ["Profile", "Total Runs", "Success", "Failed", "Timeout No Model", "Validation Pass Rate", "Average PC Respect Rate"],
+            ["Profile", "Total Runs", "VALID", "INVALID", "UNCHECKED", "Validation Pass Rate",
+             "Average PC Respect Rate"],
             rows,
         ))
         gr.write("\n## Cost Comparison\n")
@@ -775,6 +818,68 @@ def write_general_report(report_path, profile_aggregates):
         ))
 
 
+def process_profile_workflow(profile, time_limits, fc_weeks, pc_weeks, constraint_configs, args):
+    """Encapsulates the execution flow for a single Clingo profile to allow parallel processing."""
+    profile_dir = os.path.join(RUN_RESULTS_ROOT, profile)
+    runs_dir = os.path.join(profile_dir, "runs")
+    os.makedirs(os.path.join(runs_dir, "details"), exist_ok=True)
+    print(f"=== Running profile: {profile} ({CLINGO_PROFILES[profile]}) ===")
+    
+    tasks_grouped = build_tasks_for_profile(
+        profile,
+        time_limits,
+        runs_dir,
+        fc_weeks,
+        pc_weeks,
+        constraint_configs,
+    )
+    summary_matrix = {}
+    master_csv_data = []
+    run_summaries = []
+    commands_list = []
+    
+    for group in tasks_grouped:
+        group_title = group[0]["group_name"]
+        print(f"--- Initiating Batch [{profile}]: {group_title} ---")
+        
+        # Record commands safely
+        for task in group:
+            cmd_str = shlex.join(task["cmd"]) if hasattr(shlex, 'join') else " ".join(task["cmd"])
+            commands_list.append([profile, task["run_type"], cmd_str])
+        
+        if args.parallel:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                futures = [executor.submit(execute_and_parse, task) for task in group]
+                for future in concurrent.futures.as_completed(futures):
+                    result_data = future.result()
+                    master_csv_data.extend(result_data["master_rows"])
+                    run_summaries.append(result_data["run_summary"])
+                    if result_data["is_base"]:
+                        summary_matrix[(result_data["year"], result_data["time_limit"])] = result_data["ottimizzazione"]
+        else:
+            for task in group:
+                result_data = execute_and_parse(task)
+                master_csv_data.extend(result_data["master_rows"])
+                run_summaries.append(result_data["run_summary"])
+                if result_data["is_base"]:
+                    summary_matrix[(result_data["year"], result_data["time_limit"])] = result_data["ottimizzazione"]
+    
+    _, _, _, aggregate = write_profile_reports(
+        profile,
+        profile_dir,
+        master_csv_data,
+        summary_matrix,
+        run_summaries,
+        time_limits,
+        fc_weeks,
+        pc_weeks,
+        constraint_configs,
+    )
+    
+    print(f"Profile '{profile}' reports saved under: {profile_dir}\n")
+    return profile, aggregate, commands_list
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run scheduling optimization commands and parse output.")
     parser.add_argument(
@@ -782,12 +887,19 @@ def main():
         action="store_true",
         help="Run time-limit batches in parallel (default: False/Sequential)",
     )
+    parser.add_argument(
+        "--parallel-profiles",
+        type=int,
+        default=1,
+        help="Number of Clingo profiles to run in parallel (default: 1)",
+    )
     args = parser.parse_args()
-
-    time_limits = [5,15,60]
+    
+    # time_limits = [5]
+    time_limits = [5,15,30,60]
     fc_weeks = list(range(22, 30))
     pc_weeks = list(range(32, 34))
-
+    
     constraint_configs = [
         {"name": "FC_1C", "fc": [1], "pc": [], "desc": "1 FC Center (8w)"},
         {"name": "FC_2C", "fc": [1, 2], "pc": [], "desc": "2 FC Center (8w)"},
@@ -818,65 +930,43 @@ def main():
         {"name": "Comb_1F_1M_2P_1PM", "fc": [1, 7], "pc": [4, 5, 9], "desc": "1 FC C + 1 FC M + 2 PC C + 1 PC M"},
         {"name": "Comb_2F_1M_2P_1PM", "fc": [1, 2, 7], "pc": [4, 5, 9], "desc": "2 FC C + 1 FC M + 2 PC C + 1 PC M"},
     ]
-
+    
     os.makedirs(RUN_RESULTS_ROOT, exist_ok=True)
-    print(f"Execution Mode: {'PARALLEL' if args.parallel else 'SEQUENTIAL'}")
+    print(f"Execution Mode: {'PARALLEL' if args.parallel else 'SEQUENTIAL'} inside profiles")
+    print(f"Profile Execution Mode: {args.parallel_profiles} concurrent profiles")
     print(f"Output root: {RUN_RESULTS_ROOT}\n")
-
+    
     profile_aggregates = {}
-    for profile in CLINGO_PROFILES:
-        profile_dir = os.path.join(RUN_RESULTS_ROOT, profile)
-        runs_dir = os.path.join(profile_dir, "runs")
-        os.makedirs(os.path.join(runs_dir, "details"), exist_ok=True)
-        print(f"=== Running profile: {profile} ({CLINGO_PROFILES[profile]}) ===")
-
-        tasks_grouped = build_tasks_for_profile(
-            profile,
-            time_limits,
-            runs_dir,
-            fc_weeks,
-            pc_weeks,
-            constraint_configs,
-        )
-        summary_matrix = {}
-        master_csv_data = []
-        run_summaries = []
-
-        for group in tasks_grouped:
-            group_title = group[0]["group_name"]
-            print(f"--- Initiating Batch: {group_title} ---")
-
-            if args.parallel:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-                    futures = [executor.submit(execute_and_parse, task) for task in group]
-                    for future in concurrent.futures.as_completed(futures):
-                        result_data = future.result()
-                        master_csv_data.extend(result_data["master_rows"])
-                        run_summaries.append(result_data["run_summary"])
-                        if result_data["is_base"]:
-                            summary_matrix[(result_data["year"], result_data["time_limit"])] = result_data["ottimizzazione"]
-            else:
-                for task in group:
-                    result_data = execute_and_parse(task)
-                    master_csv_data.extend(result_data["master_rows"])
-                    run_summaries.append(result_data["run_summary"])
-                    if result_data["is_base"]:
-                        summary_matrix[(result_data["year"], result_data["time_limit"])] = result_data["ottimizzazione"]
-
-        _, _, _, aggregate = write_profile_reports(
-            profile,
-            profile_dir,
-            master_csv_data,
-            summary_matrix,
-            run_summaries,
-            time_limits,
-            fc_weeks,
-            pc_weeks,
-            constraint_configs,
-        )
-        profile_aggregates[profile] = aggregate
-        print(f"Profile '{profile}' reports saved under: {profile_dir}\n")
-
+    all_commands = []
+    
+    if args.parallel_profiles > 1:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.parallel_profiles) as executor:
+            futures = [
+                executor.submit(process_profile_workflow, profile, time_limits, fc_weeks, pc_weeks, constraint_configs,
+                                args)
+                for profile in CLINGO_PROFILES
+            ]
+            for future in concurrent.futures.as_completed(futures):
+                profile, aggregate, commands_list = future.result()
+                profile_aggregates[profile] = aggregate
+                all_commands.extend(commands_list)
+    else:
+        for profile in CLINGO_PROFILES:
+            profile, aggregate, commands_list = process_profile_workflow(
+                profile, time_limits, fc_weeks, pc_weeks, constraint_configs, args
+            )
+            profile_aggregates[profile] = aggregate
+            all_commands.extend(commands_list)
+    
+    # Write commands out to CSV
+    commands_csv_path = os.path.join(RUN_RESULTS_ROOT, "commands.csv")
+    with open(commands_csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Profile", "Run_Type", "Command"])
+        writer.writerows(all_commands)
+    
+    print(f"Exported all executable commands to '{commands_csv_path}'\n")
+    
     general_report_path = os.path.join(RUN_RESULTS_ROOT, "general_report.md")
     write_general_report(general_report_path, profile_aggregates)
     print("All profiles completed.")

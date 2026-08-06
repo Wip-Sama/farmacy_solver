@@ -314,17 +314,19 @@ def generate_dynamic_constraints(
             lines.append(f"farmacia({p_id}).\n")
             lines.append(f"zona({p_id},{p_zona}).\n")
         lines.append("\n")
-
+    
     # Inserimento dei vincoli logici utente per forzature e preferenze
     lines.append("% Vincoli logici personalizzati (Strong/Weak Constraints)\n")
     for f, w in parse_fw_constraints(force_open):
         lines.append(f":- not turno({w}, {f}).\n")
     for f, w in parse_fw_constraints(force_closed):
         lines.append(f":- turno({w}, {f}).\n")
+    
+    # High-priority level (@2) for user preferences so they override shift balance
     for f, w in parse_fw_constraints(pref_open):
-        lines.append(f":~ not turno({w}, {f}). [10@0, {f}, {w}]\n")
+        lines.append(f":~ not turno({w}, {f}). [10@2, {f}, {w}]\n")
     for f, w in parse_fw_constraints(pref_closed):
-        lines.append(f":~ turno({w}, {f}). [10@0, {f}, {w}]\n")
+        lines.append(f":~ turno({w}, {f}). [10@2, {f}, {w}]\n")
     lines.append("\n")
 
 
@@ -394,7 +396,7 @@ def generate_dynamic_constraints(
     lines.insert(0, f"settimana({actual_start_week}..{end_week}).\n")
 
     fd, path = tempfile.mkstemp(suffix=".lp", text=True)
-    with os.fdopen(fd, 'w') as f:
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
         f.writelines(lines)
     
     # DEBUG ------------------------------------

@@ -1,5 +1,6 @@
 import sys
 import os
+import ntpath
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import time
 from datetime import date, datetime, timedelta
@@ -34,6 +35,18 @@ from core.terminal_display import (
 
 app = typer.Typer(help="Rich runner for ASP pharmacy scheduling.")
 console = Console()
+
+
+def has_explicit_path(path_value):
+    if not path_value:
+        return False
+    return bool(os.path.dirname(path_value) or ntpath.dirname(path_value))
+
+
+def ensure_parent_dir(path_value):
+    parent = os.path.dirname(path_value) or ntpath.dirname(path_value)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
 
 class SolverType(str, Enum):
     clingo = "clingo"
@@ -251,11 +264,11 @@ def main(
         sys.exit(1)
     
     csv_dir = SCHEDULES_DIR
-    if csv_file and not os.path.dirname(csv_file):
+    if csv_file and not has_explicit_path(csv_file):
         csv_file = str(csv_dir / csv_file)
-    if reschedule_csv and not os.path.dirname(reschedule_csv):
+    if reschedule_csv and not has_explicit_path(reschedule_csv):
         reschedule_csv = str(csv_dir / reschedule_csv)
-    if prev_year and not os.path.dirname(prev_year):
+    if prev_year and not has_explicit_path(prev_year):
         prev_year = str(csv_dir / prev_year)
 
     domain_file = str(ASP_DIR / "domain.lp")
@@ -391,8 +404,7 @@ def main(
                 'opt': opt,
                 'time': elapsed_time
             }
-            if os.path.dirname(csv_file):
-                os.makedirs(os.path.dirname(csv_file), exist_ok=True)
+            ensure_parent_dir(csv_file)
             generate_csv_report(
                 schedule, csv_file, run_info, year, festivo_schedule=festivo_schedule, festivities_dict=festivities_dict,
                 csv_mode=csv_mode, csv_direction=csv_direction, csv_map_pharmacies=csv_map_pharmacies,
