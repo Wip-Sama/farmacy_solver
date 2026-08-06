@@ -40,6 +40,13 @@ class SolverType(str, Enum):
     dlv = "dlv"
     dlv2 = "dlv2"
 
+
+class ClingoProfile(str, Enum):
+    default = "default"
+    usc = "usc"
+    parallel4 = "parallel4"
+    parallel4_usc = "parallel4_usc"
+
 def generate_output_tables(schedule, year, cost_value=None, elapsed_time=None, is_live=False, festivo_schedule=None, festivities_dict=None, pharmacies_list=None):
     renderables = []
 
@@ -123,7 +130,7 @@ def generate_output_tables(schedule, year, cost_value=None, elapsed_time=None, i
 
     return renderables
 
-def run_rich_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic_file=None, live=False, time_limit=None, year=2025, festivities_dict=None, pharmacies_list=None):
+def run_rich_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic_file=None, live=False, time_limit=None, year=2025, festivities_dict=None, pharmacies_list=None, clingo_arguments=None):
     files = [domain_file, guess_file, constraints_file, opt_file]
     if dynamic_file:
         files.append(dynamic_file)
@@ -136,12 +143,7 @@ def run_rich_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic
         console.print("[red]The 'clingo' Python module is not installed. Please install it using 'pip install clingo'.[/red]")
         sys.exit(1)
 
-    ctl = clingo.Control(
-        arguments=[]
-        # arguments=["--opt-strat=usc"],
-        # arguments=["--parallel-mode=4"],
-        # arguments=["--parallel-mode=4", "--opt-strat=usc"],
-    )
+    ctl = clingo.Control(arguments=clingo_arguments or [])
     for f in files:
         ctl.load(f)
 
@@ -178,6 +180,7 @@ def run_rich_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic
             renderables = generate_output_tables(schedule, year, cost_value=cost_val, is_live=True, festivo_schedule=fest_sched, festivities_dict=festivities_dict, pharmacies_list=pharmacies_list)
             on_model.live_ctx.update(Group(*renderables, progress))
 
+    timed_out = False
     with Live(Group(progress), console=console, refresh_per_second=10, transient=True) as live_ctx:
         on_model.live_ctx = live_ctx
         with ctl.solve(on_model=on_model, async_=True) as handle:
@@ -190,6 +193,7 @@ def run_rich_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic
                             finished = True
                             break
                     if not finished:
+                        timed_out = True
                         console.print(f"[yellow]Time limit of {time_limit}s reached. Cancelling solver...[/yellow]")
                         handle.cancel()
                         handle.wait()
@@ -207,8 +211,10 @@ def run_rich_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic
     if costs:
         final_cost = costs[-1]
         output += f"COST {final_cost[0]}@1\n"
+    if timed_out and not models:
+        output += "RUN_STATUS: TIMEOUT_NO_MODEL\n"
 
-    return output, len(models)
+    return output, len(models), {"timed_out": timed_out, "models_found": len(models)}
 
 @app.command()
 def main(
@@ -236,7 +242,8 @@ def main(
     force_closed: Annotated[Optional[List[str]], typer.Option(help="Forza la chiusura (Strong constraint). Singola, lista con ';' (es. '1,15') o file")] = None,
     pref_open: Annotated[Optional[List[str]], typer.Option(help="Preferisce l'apertura (Weak constraint). Singola, lista con ';' (es. '1,15') o file")] = None,
     pref_closed: Annotated[Optional[List[str]], typer.Option(help="Preferisce la chiusura (Weak constraint). Singola, lista con ';' (es. '1,15') o file")] = None,
-    solver: Annotated[SolverType, typer.Option(help="Solver to use")] = SolverType.clingo
+    solver: Annotated[SolverType, typer.Option(help="Solver to use")] = SolverType.clingo,
+    clingo_profile: Annotated[ClingoProfile, typer.Option(help="Clingo operational profile")] = ClingoProfile.default
 ):
     optimizations = ASP_DIR / "optimizations"
     if not optimizations.exists():
@@ -337,10 +344,17 @@ def main(
 
         start_time = time.time()
         if solver == SolverType.clingo:
-            asp_output, num_solutions = run_rich_clingo(
+            clingo_profile_args = {
+                ClingoProfile.default: [],
+                ClingoProfile.usc: ["--opt-strat=usc"],
+                ClingoProfile.parallel4: ["--parallel-mode=4"],
+                ClingoProfile.parallel4_usc: ["--parallel-mode=4", "--opt-strat=usc"],
+            }[clingo_profile]
+            asp_output, num_solutions, _run_meta = run_rich_clingo(
                 domain_file, guess_file, constraints_file, opt_file,
                 dynamic_file=dynamic_file, live=live, time_limit=time_limit, year=year,
-                festivities_dict=festivities_dict, pharmacies_list=pharmacies_list
+                festivities_dict=festivities_dict, pharmacies_list=pharmacies_list,
+                clingo_arguments=clingo_profile_args
             )
         elif solver == SolverType.dlv2:
             asp_output, num_solutions = run_external_solver("dlv2", domain_file, guess_file, constraints_file, opt_file, dynamic_file=dynamic_file, live=live, time_limit=time_limit)
@@ -352,6 +366,9 @@ def main(
         schedule, festivo_schedule = parse_schedule(asp_output)
         
         if not schedule:
+            if "RUN_STATUS: TIMEOUT_NO_MODEL" in asp_output:
+                console.print("[yellow]No model found before timeout.[/yellow]")
+                raise typer.Exit(code=2)
             console.print("[red]No schedule could be parsed from the output.[/red]")
             raise typer.Exit(code=1)
 
