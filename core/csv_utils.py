@@ -101,7 +101,7 @@ def read_csv_schedule(csv_path: str):
 
     if not os.path.exists(csv_path):
         logging.error(f"CSV file not found: {csv_path}")
-        return schedule, metadata, pharmacy_map, past_festivities, raw_rows
+        raise FileNotFoundError(f"CSV file not found: {csv_path}")
 
     with open(csv_path, mode='r', encoding='utf-8') as f:
         reader = csv.reader(f)

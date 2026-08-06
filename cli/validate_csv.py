@@ -3,10 +3,9 @@ import os
 import argparse
 import tempfile
 import logging
-from collections import defaultdict
-from csv_utils import read_csv_schedule, parse_first_day_of_week
-from runner_core import get_week_number_for_date
-from config import ASP_DIR
+from core.csv_utils import read_csv_schedule, parse_first_day_of_week
+from core.runner_core import get_week_number_for_date
+from core.config import ASP_DIR
 
 from datetime import date
 

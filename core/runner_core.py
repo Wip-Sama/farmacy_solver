@@ -344,7 +344,9 @@ def run_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic_file
         logging.error("The 'clingo' Python module is not installed. Please install it using 'pip install clingo'.")
         sys.exit(1)
 
-    ctl = clingo.Control()
+    ctl = clingo.Control(
+        arguments=["--parallel-mode=4", "--opt-strat=usc"]
+    )
     for f in files:
         ctl.load(f)
     logging.info("Grounding...")
