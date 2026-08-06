@@ -43,8 +43,8 @@ The system uses a 3-tier hybrid architecture:
 * **`core/config.py`**: Centralized configuration resolver that reads `app_config.yaml` and dynamically calculates workspace paths (`PROJECT_ROOT`, `ASP_DIR`, `DATA_DIR`, `SCHEDULES_DIR`).
 * **`core/runner_core.py`**: Python engine that calculates date bounds, Easter and Italian national holidays, generates temporary ASP facts/rules (`.lp`), invokes the `clingo` Python API, and parses ASP answer set atoms (`turno/2`, `turno_festivo/2`).
 * **`core/asp/*.lp`**: Declarative Answer Set Programming rule files:
-  * `domain.lp`: Search space predicates (`farmacia`, `settimana`).
-  * `constraints.lp`: Hard constraints (fairness, consecutive shift rules, summer marina rules).
+  * `domain.lp`: Search space predicates (`settimana`). Note: `farmacia` and `zona` facts are now generated dynamically by `runner_core.py` instead of being hardcoded.
+  * `constraints.lp`: Hard constraints (fairness, consecutive shift rules, seasonal zone rules for centro/marina, anti-double marina constraint).
   * `guess_choice.lp` & `guess_or.lp`: Choice rules for assignment search.
   * `optimizations/*.lp`: Soft optimization criteria (exponential gap penalty minimization).
 * **`core/csv_utils.py` & `core/terminal_display.py`**: Data serialization layer for reading, writing, and formatting schedules into compact, normal, or extended CSV formats.
@@ -60,7 +60,11 @@ The system uses a 3-tier hybrid architecture:
 
 ---
 
-## 3. Data Flow & Persistence
+## 3. **Pharmacy Configuration**: Pharmacies are defined in `data/settings.json` with `id`, `name`, and `location` (either `centro` or `marina`). These are passed to the ASP solver at generation time as dynamic `farmacia/1` and `zona/2` facts.
+
+---
+
+## 4. Data Flow & Persistence
 
 1. **User Settings**: Stored in `data/settings.json`. Contains year defaults, auto-festivities preference, solver time limits, and custom festivities/pharmacy preferences.
 2. **Schedules**: Stored as `data/schedules/schedule_{year}.csv` alongside `data/schedules/schedule_{year}.meta.json` (storing execution time, solver used, cost value, generation timestamp).

@@ -163,16 +163,19 @@ def read_csv_schedule(csv_path: str):
             week_num = int(row[0])
             fest_str = row[fest_col_idx].strip() if fest_col_idx is not None and fest_col_idx < len(row) else ""
 
+            # Identifica dinamicamente tutte le colonne farmacia presenti nell'header
+            pharmacy_cols = []
+            for idx, col_name in enumerate(h_lower):
+                if col_name.startswith('f') and col_name[1:].isdigit():
+                    pharmacy_cols.append((int(col_name[1:]), idx))
+
             has_pharmacy_cols = False
-            for i in range(1, 11):
-                col_name = f"f{i}"
-                if col_name in h_lower:
-                    idx = h_lower.index(col_name)
-                    if idx < len(row) and row[idx].strip() == "1":
-                        schedule[week_num].add(i)
-                        has_pharmacy_cols = True
-                        if fest_str:
-                            past_festivities.add((fest_str.lower(), i))
+            for f_id, idx in pharmacy_cols:
+                if idx < len(row) and str(row[idx]).strip() == "1":
+                    schedule[week_num].add(f_id)
+                    has_pharmacy_cols = True
+                    if fest_str:
+                        past_festivities.add((fest_str.lower(), f_id))
 
             if not has_pharmacy_cols:
                 turn_col_idx = None
@@ -189,7 +192,6 @@ def read_csv_schedule(csv_path: str):
                             past_festivities.add((fest_str.lower(), fid))
 
     return schedule, metadata, pharmacy_map, past_festivities, raw_rows
-
 
 def generate_csv_report(
     schedule,
@@ -213,6 +215,19 @@ def generate_csv_report(
 
     def get_pharmacy_name(f_id):
         return pharmacy_map.get(f_id, f"F{f_id}")
+
+    # Raccoglie dinamicamente tutti gli ID farmacia assegnati nel calendario corrente
+    active_pharmacy_ids = set()
+    for f_set in schedule.values():
+        active_pharmacy_ids.update(f_set)
+    
+    # Includiamo anche quelle del mapping (se fornite) nel caso qualcuna abbia 0 turni
+    if pharmacy_map:
+        active_pharmacy_ids.update(pharmacy_map.keys())
+        
+    sorted_f_ids = sorted(list(active_pharmacy_ids))
+    if not sorted_f_ids:
+        sorted_f_ids = list(range(1, 11)) # Fallback di sicurezza estrema
 
     try:
         with open(filename, mode='w', newline='', encoding='utf-8') as file:
@@ -281,7 +296,7 @@ def generate_csv_report(
                         writer.writerow([week, monday_str, fest_label, f_names])
 
                 elif csv_mode == "compact":
-                    header = ['Settimana', 'Data Inizio', 'Festività'] + [get_pharmacy_name(i) for i in range(1, 11)]
+                    header = ['Settimana', 'Data Inizio', 'Festività'] + [get_pharmacy_name(i) for i in sorted_f_ids]
                     writer.writerow(header)
                     for week in sorted(schedule.keys()):
                         monday_str = get_week_date(week, year, first_day_of_week)
@@ -295,12 +310,12 @@ def generate_csv_report(
                         fest_label = " / ".join(week_festivities)
                         f_assigned = set(schedule[week])
                         row = [week, monday_str, fest_label]
-                        for i in range(1, 11):
+                        for i in sorted_f_ids:
                             row.append(1 if i in f_assigned else "")
                         writer.writerow(row)
 
                 elif csv_mode == "extended":
-                    header = ['Settimana', 'Data', 'Giorno', 'Festività'] + [get_pharmacy_name(i) for i in range(1, 11)]
+                    header = ['Settimana', 'Data', 'Giorno', 'Festività'] + [get_pharmacy_name(i) for i in sorted_f_ids]
                     writer.writerow(header)
                     for week in sorted(schedule.keys()):
                         monday_str = get_week_date(week, year, first_day_of_week)
@@ -312,12 +327,12 @@ def generate_csv_report(
                                 fest_name = fest_dict.get(day_date, "")
                                 f_assigned = set(schedule[week])
                                 row = [week, day_date.strftime("%Y-%m-%d"), dow_str, fest_name]
-                                for i in range(1, 11):
+                                for i in sorted_f_ids:
                                     row.append(1 if i in f_assigned else "")
                                 writer.writerow(row)
 
-                else:
-                    header = ['Settimana', 'Data', 'Festività'] + [get_pharmacy_name(i) for i in range(1, 11)]
+                else: # normal mode
+                    header = ['Settimana', 'Data', 'Festività'] + [get_pharmacy_name(i) for i in sorted_f_ids]
                     writer.writerow(header)
                     for week in sorted(schedule.keys()):
                         monday_str = get_week_date(week, year, first_day_of_week)
@@ -346,7 +361,7 @@ def generate_csv_report(
                             fest_label = group[0][1]
                             f_assigned = group[0][2]
                             row = [week, start_date_str, fest_label]
-                            for i in range(1, 11):
+                            for i in sorted_f_ids:
                                 row.append(1 if i in f_assigned else "")
                             writer.writerow(row)
 

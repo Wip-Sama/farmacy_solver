@@ -13,7 +13,6 @@ def get_week_date(week_number, year=2025, first_day_of_week=0):
     return d_obj.strftime("%Y-%m-%d")
 
 def parse_arguments():
-    """Gestisce gli argomenti passati da riga di comando (argv)."""
     parser = argparse.ArgumentParser(
         description="Parser per l'output ASP della turnazione delle farmacie.",
         formatter_class=argparse.RawTextHelpFormatter
@@ -36,18 +35,14 @@ def parse_arguments():
 
 
 def read_input(args):
-    """Legge l'output di DLV/Clingo dal file passato come argomento o dalla pipe."""
-    # Controllo di sicurezza: se stiamo aspettando l'input da stdin ma il terminale 
-    # è interattivo (ovvero l'utente non ha usato la pipe), blocchiamo l'esecuzione.
+    # Controllo di sicurezza su stdin senza pipe
     if args.input_file.name == '<stdin>' and sys.stdin.isatty():
         print("Errore: Nessun input ricevuto. Passa un file o usa la pipe.")
         print("Esegui 'python script.py --help' per maggiori informazioni.")
         sys.exit(1)
 
-    # Legge il contenuto (sia che sia un file, sia che sia la pipe)
     asp_output = args.input_file.read()
 
-    # Controllo se l'output è vuoto
     if not asp_output.strip():
         print("Errore: L'input ricevuto è vuoto. Verifica l'output del solver.")
         sys.exit(1)
@@ -56,7 +51,6 @@ def read_input(args):
 
 
 def parse_schedule(asp_output):
-    """Estrae i turni e i turni festivi dall'output ASP."""
     pattern_turno = r"turno\((\d+),\s*(\d+)\)"
     matches_turno = re.findall(pattern_turno, asp_output)
 
@@ -79,12 +73,13 @@ def parse_schedule(asp_output):
 
 
 def get_zona(f_id):
-    """Restituisce la zona in base all'ID della farmacia (1-6 Centro, 7-10 Marina)."""
-    return "Centro" if 1 <= f_id <= 6 else "Marina"
+    # Qui non so bene che cosa devo fare di preciso:
+    # Per ora ho rimosso l'hardcoding 1-6 / 7-10. 
+    # Mantengo la firma giusto per compatibilità con il runner, ma la logica andrà passata dinamicamente.
+    return "Assegnata"
 
 
 def print_weekly_schedule(schedule, year=2025, festivo_schedule=None, festivities_dict=None, first_day_of_week=0):
-    """Stampa la tabella del calendario settimanale spezzando le righe sulle festività."""
     print("-" * 85)
     print(f"{'Settimana':<22} | {'Festività':<20} | {'Farmacie di Turno'}")
     print("-" * 85)
@@ -122,7 +117,8 @@ def print_weekly_schedule(schedule, year=2025, festivo_schedule=None, festivitie
             fest_label = group[0][1]
             f_assigned = group[0][2]
             
-            formatted_farmacie = [f"F{f} ({get_zona(f)})" for f in sorted(f_assigned)]
+            # Formattazione neutra senza zone fisse
+            formatted_farmacie = [f"F{f}" for f in sorted(f_assigned)]
             week_display = f"Wk {week:<2} ({start_date_str})"
             
             print(f"{week_display:<22} | {fest_label:<20} | {', '.join(formatted_farmacie)}")
@@ -131,15 +127,17 @@ def print_weekly_schedule(schedule, year=2025, festivo_schedule=None, festivitie
 from core.csv_utils import parse_pharmacy_mapping, generate_csv_report
 
 
-
 def print_shift_statistics(schedule):
-    """Calcola e stampa il totale dei turni assegnati per ogni farmacia."""
     print(f"{'Farmacia':<10} | {'Turni Assegnati'}")
     print("-" * 50)
     
-    total_shifts_counted = 0
+    # Estrazione dinamica delle farmacie attive
+    active_pharmacies = set()
+    for f_list in schedule.values():
+        active_pharmacies.update(f_list)
     
-    for farmacia in range(1, 11): 
+    total_shifts_counted = 0
+    for farmacia in sorted(active_pharmacies): 
         count = sum(farmacia in farmacie for farmacie in schedule.values())
         total_shifts_counted += count
         print(f"F{farmacia:<9} | {count}")
@@ -154,7 +152,6 @@ def print_shift_statistics(schedule):
 
 
 def print_optimization_cost(asp_output):
-    """Estrae il costo ASP (ora usato come penalità per il divario)."""
     cost_match = re.search(r"COST\s+(\d+)@\d+", asp_output, re.IGNORECASE)
     
     if cost_match:
@@ -168,13 +165,12 @@ def print_optimization_cost(asp_output):
 def main():
     args = parse_arguments()
     asp_output = read_input(args)
-    schedule = parse_schedule(asp_output)
+    schedule, fest_schedule = parse_schedule(asp_output)
     
     if not schedule:
         print("Nessun turno trovato nell'output. Verifica che il solver abbia trovato una soluzione valida.")
         return
 
-    # 4. Visualizzazione a schermo
     print_weekly_schedule(schedule, args.year)
     print_shift_statistics(schedule)
     print_optimization_cost(asp_output)

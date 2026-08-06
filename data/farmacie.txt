@@ -1,0 +1,8 @@
+1,centro;
+2,centro;
+3,marina;
+4,centro;
+5,marina;
+6,centro;
+7,marina;
+8,centro;

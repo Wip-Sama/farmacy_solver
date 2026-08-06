@@ -76,6 +76,7 @@ python rich_runner.py --time-limit 60
 | `--start-week`                        | Settimana di inizio per la schedulazione                                               |
 | `--end-week`                          | Settimana di fine per la schedulazione                                                 |
 | `--time-limit`                        | Limite di tempo per il solver in secondi                                               |
+| `--pharmacies`                        | Elenco personalizzato farmacie con zone (es. `1,centro;2,marina`)                     |
 | `--live`                              | Stampa in tempo reale le soluzioni man mano che vengono trovate                        |
 | `--auto-festivities`                  | Genera automaticamente le festività nazionali italiane per l'anno                      |
 | `--festivities`                       | Festività personalizzate (`NOME,INIZIO,FINE` oppure `NOME,DATA`)                       |
@@ -90,8 +91,10 @@ python rich_runner.py --time-limit 60
 | `--end-week`                          | Settimana di fine per la schedulazione (numero o `now`)                                 |
 | `--reschedule-csv`                    | File CSV di una schedulazione precedente per la rischedulazione                         |
 | `--reschedule-from`                   | Numero di settimana da cui iniziare la rischedulazione (numero o `now`)                  |
-| `--unavailable`                       | Elenco delle farmacie indisponibili (es. `1,22`)                                       |
-| `--unavailable-interval`              | Intervallo di indisponibilità (es. `3,22,28`)                                          |
+| `--force-open`                        | Forza una farmacia ad essere aperta in una data settimana (es. `1,22`)                |
+| `--force-closed`                      | Forza una farmacia ad essere chiusa in una data settimana (es. `1,22`)                |
+| `--pref-open`                         | Preferisce una farmacia aperta in una data settimana (es. `1,22`)                     |
+| `--pref-closed`                       | Preferisce una farmacia chiusa in una data settimana (es. `1,22`)                     |
 
 ### Gestione delle Festività e Report CSV
 

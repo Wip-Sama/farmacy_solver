@@ -1,9 +1,9 @@
 {
   "year": 2026,
   "filename": "schedule_2026.csv",
-  "generated_at": "2026-07-29T17:28:19.232609",
+  "generated_at": "2026-07-29T17:50:22.744925",
   "solver": "clingo",
-  "execution_time_seconds": 15.28,
+  "execution_time_seconds": 55.38,
   "cost_value": "Completed",
   "is_locked": false
 }

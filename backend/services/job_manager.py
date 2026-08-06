@@ -208,14 +208,20 @@ class JobManager:
                     if curr_file.exists():
                         res_csv = str(curr_file)
 
-            # 4. Pharmacy preferences (unavailabilities)
+            # 4. Parsing Preferenze Farmacie (Strong & Weak Constraints)
             unavailables = []
+            force_open = []
+            force_closed = []
+            pref_open = []
+            pref_closed = []
+
             pref_list = pharmacy_preferences if pharmacy_preferences is not None else settings.pharmacy_preferences
             for pref in pref_list:
                 state = pref.state if hasattr(pref, 'state') else (pref.get('state', 'Closed') if isinstance(pref, dict) else 'Closed')
                 raw_d = pref.date if hasattr(pref, 'date') else (pref.get('date', '') if isinstance(pref, dict) else '')
                 pharm_id = pref.pharmacy_id if hasattr(pref, 'pharmacy_id') else (pref.get('pharmacy_id') if isinstance(pref, dict) else None)
-                if state in ["Closed", "Preferably Closed"] and raw_d and pharm_id:
+                
+                if raw_d and pharm_id:
                     d_str = raw_d.strip()
                     try:
                         if "/" in d_str:
@@ -225,12 +231,39 @@ class JobManager:
                             d_obj = datetime.strptime(d_str, "%Y-%m-%d").date()
                         else:
                             continue
+                        
                         w_num = get_week_number_for_date(d_obj, year=year, first_day_of_week=first_day_of_week)
-                        unavailables.append(f"{pharm_id},{w_num}")
+                        constraint_val = f"{pharm_id},{w_num}"
+                        
+                        # Smistamento basato sull'enum Pydantic del Frontend
+                        if state == "Closed":
+                            unavailables.append(constraint_val)
+                        elif state == "Force Open":
+                            force_open.append(constraint_val)
+                        elif state == "Force Closed":
+                            force_closed.append(constraint_val)
+                        elif state == "Preferably Open":
+                            pref_open.append(constraint_val)
+                        elif state == "Preferably Closed":
+                            pref_closed.append(constraint_val)
+                            
                     except Exception as e:
                         logging.warning(f"Skipping invalid preference date '{d_str}': {e}")
+            
+            # Generazione stringa farmacie dinamiche da passare al core (es. "1,centro; 2,marina")
+            pharmacies_str = None
+            if custom_pharmacies:
+                pharma_parts = []
+                for p in custom_pharmacies:
+                    # Estraiamo id e zona gestendo sia oggetti Pydantic che dizionari
+                    p_id = p.id if hasattr(p, 'id') else (p.get('id') if isinstance(p, dict) else getattr(p, 'pharmacy_id', None))
+                    p_location = p.location if hasattr(p, 'location') else (p.get('location', 'centro') if isinstance(p, dict) else 'centro')
+                    if p_id is not None:
+                        pharma_parts.append(f"{p_id},{p_location}")
+                if pharma_parts:
+                    pharmacies_str = ";".join(pharma_parts)
 
-            # 5. Generate dynamic constraints
+            # 5. Generate dynamic constraints (iniettiamo le preferenze smistate)
             dynamic_file = generate_dynamic_constraints(
                 reschedule_csv=res_csv,
                 reschedule_from=res_from_week,
@@ -241,7 +274,12 @@ class JobManager:
                 festivities_dict=festivities_dict,
                 prev_year_csv=prev_year_csv,
                 first_day_of_week=first_day_of_week,
-                year=year
+                year=year,
+                pharmacies=pharmacies_str,
+                force_open=force_open if force_open else None,
+                force_closed=force_closed if force_closed else None,
+                pref_open=pref_open if pref_open else None,
+                pref_closed=pref_closed if pref_closed else None
             )
 
             domain_file = str(ASP_DIR / "domain.lp")
@@ -260,7 +298,6 @@ class JobManager:
                     ws_manager.broadcast(WSEvent(type="JOB_PROGRESS", payload={"line": log_line})),
                     main_loop
                 )
-
 
             # Run solver in thread to avoid blocking main async loop
             asp_output, num_solutions = await asyncio.to_thread(
@@ -329,6 +366,4 @@ class JobManager:
             self.current_job_id = None
             self.current_task = None
 
-
 job_manager = JobManager()
-

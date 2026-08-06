@@ -43,7 +43,7 @@ class SolverType(str, Enum):
     dlv = "dlv"
     dlv2 = "dlv2"
 
-def generate_output_tables(schedule, year, cost_value=None, elapsed_time=None, is_live=False, festivo_schedule=None, festivities_dict=None):
+def generate_output_tables(schedule, year, cost_value=None, elapsed_time=None, is_live=False, festivo_schedule=None, festivities_dict=None, pharmacies_list=None):
     renderables = []
 
     ### Weekly Schedule Table
@@ -100,7 +100,8 @@ def generate_output_tables(schedule, year, cost_value=None, elapsed_time=None, i
     stat_table.add_column("Turni Assegnati", justify="right")
 
     total_shifts_counted = 0
-    for farmacia in range(1, 11): 
+    pharma_ids = pharmacies_list if pharmacies_list is not None else range(1, 11)
+    for farmacia in pharma_ids: 
         count = sum(farmacia in farmacie for farmacie in schedule.values())
         total_shifts_counted += count
         stat_table.add_row(f"F{farmacia}", str(count))
@@ -125,7 +126,7 @@ def generate_output_tables(schedule, year, cost_value=None, elapsed_time=None, i
 
     return renderables
 
-def run_rich_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic_file=None, live=False, time_limit=None, year=2025, festivities_dict=None):
+def run_rich_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic_file=None, live=False, time_limit=None, year=2025, festivities_dict=None, pharmacies_list=None):
     files = [domain_file, guess_file, constraints_file, opt_file]
     if dynamic_file:
         files.append(dynamic_file)
@@ -172,7 +173,7 @@ def run_rich_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic
         if live and hasattr(on_model, 'live_ctx'):
             schedule, fest_sched = parse_schedule(model_str)
             cost_val = m.cost[0] if m.cost else None
-            renderables = generate_output_tables(schedule, year, cost_value=cost_val, is_live=True, festivo_schedule=fest_sched, festivities_dict=festivities_dict)
+            renderables = generate_output_tables(schedule, year, cost_value=cost_val, is_live=True, festivo_schedule=fest_sched, festivities_dict=festivities_dict, pharmacies_list=pharmacies_list)
             on_model.live_ctx.update(Group(*renderables, progress))
 
     with Live(Group(progress), console=console, refresh_per_second=10, transient=True) as live_ctx:
@@ -228,6 +229,11 @@ def main(
     year: Annotated[int, typer.Option(help="L'anno per cui si vuole generare il calendario")] = 2025,
     start_week: Annotated[str, typer.Option(help="Settimana di inizio per la schedulazione (numero o 'now')")] = "1",
     end_week: Annotated[Optional[str], typer.Option(help="Settimana di fine per la schedulazione (numero o 'now')")] = None,
+    pharmacies: Annotated[Optional[str], typer.Option(help="Elenco farmacie 'id,zona;...' o file .txt. Es: '1,centro; 2,marina'")] = None,
+    force_open: Annotated[Optional[List[str]], typer.Option(help="Forza l'apertura (Strong constraint). Singola, lista con ';' (es. '1,15; 2,16') o file")] = None,
+    force_closed: Annotated[Optional[List[str]], typer.Option(help="Forza la chiusura (Strong constraint). Singola, lista con ';' (es. '1,15') o file")] = None,
+    pref_open: Annotated[Optional[List[str]], typer.Option(help="Preferisce l'apertura (Weak constraint). Singola, lista con ';' (es. '1,15') o file")] = None,
+    pref_closed: Annotated[Optional[List[str]], typer.Option(help="Preferisce la chiusura (Weak constraint). Singola, lista con ';' (es. '1,15') o file")] = None,
     solver: Annotated[SolverType, typer.Option(help="Solver to use")] = SolverType.clingo
 ):
     optimizations = ASP_DIR / "optimizations"
@@ -279,18 +285,52 @@ def main(
         console.print(f"[red]Error: --start-week {start_week_num} cannot be greater than --end-week {final_end_week}.[/red]")
         raise typer.Exit(code=1)
 
+    # Estrapoliamo gli ID delle farmacie esclusivamente per la visualizzazione nelle statistiche (UI)
+    pharmacies_str = pharmacies
+    if not pharmacies_str:
+        pharmacies_str = ";".join([f"{i},{'marina' if i%2==0 else 'centro'}" for i in range(1, 11)])
+
+    if pharmacies_str and (os.path.isfile(pharmacies_str) or pharmacies_str.endswith(".txt") or pharmacies_str.endswith(".csv")):
+        try:
+            with open(pharmacies_str, "r", encoding="utf-8") as f:
+                pharmacies_str = f.read().strip()
+        except Exception:
+            pass # Ignoriamo eventuali errori. Se ne occuperà log/gestione nel core.
+
+    pharmacies_list = None
+    if pharmacies_str:
+        try:
+            parsed_ids = []
+            for p in pharmacies_str.split(';'):
+                p = p.strip()
+                if p:
+                    parts = p.split(',')
+                    parsed_ids.append(int(parts[0].strip()))
+            pharmacies_list = sorted(list(set(parsed_ids)))
+        except Exception:
+            pass # In caso di errori strani lascerà None, il fallback farà range(1, 11)
+
     festivities_dict = parse_festivities(festivities, auto_festivities, year)
 
     dynamic_file = None
     try:
+        # Chiamata pulita e diretta al core passando i parametri in chiaro
         dynamic_file = generate_dynamic_constraints(
-            reschedule_csv, reschedule_from_num, 
-            unavailable, unavailable_interval,
-            start_week_num, final_end_week,
+            reschedule_csv=reschedule_csv,
+            reschedule_from=reschedule_from_num,
+            unavailables=unavailable,
+            unavailable_intervals=unavailable_interval,
+            start_week=start_week_num,
+            end_week=final_end_week,
             festivities_dict=festivities_dict,
             prev_year_csv=prev_year,
             first_day_of_week=first_day_of_week,
-            year=year
+            year=year,
+            pharmacies=pharmacies,
+            force_open=force_open,
+            force_closed=force_closed,
+            pref_open=pref_open,
+            pref_closed=pref_closed
         )
 
         start_time = time.time()
@@ -298,7 +338,7 @@ def main(
             asp_output, num_solutions = run_rich_clingo(
                 domain_file, guess_file, constraints_file, opt_file,
                 dynamic_file=dynamic_file, live=live, time_limit=time_limit, year=year,
-                festivities_dict=festivities_dict
+                festivities_dict=festivities_dict, pharmacies_list=pharmacies_list
             )
         elif solver == SolverType.dlv2:
             asp_output, num_solutions = run_external_solver("dlv2", domain_file, guess_file, constraints_file, opt_file, dynamic_file=dynamic_file, live=live, time_limit=time_limit)
@@ -317,7 +357,7 @@ def main(
         cost_match = re.search(r"COST\s+(\d+)@\d+", asp_output, re.IGNORECASE)
         cost_value = int(cost_match.group(1)) if cost_match else None
 
-        renderables = generate_output_tables(schedule, year, cost_value=cost_value, elapsed_time=elapsed_time, festivo_schedule=festivo_schedule, festivities_dict=festivities_dict)
+        renderables = generate_output_tables(schedule, year, cost_value=cost_value, elapsed_time=elapsed_time, festivo_schedule=festivo_schedule, festivities_dict=festivities_dict, pharmacies_list=pharmacies_list)
         
         if num_solutions is not None:
             renderables.append(Text.from_markup(f"\n[cyan]✓ Solved![/cyan] [green]Found {num_solutions} solutions.[/green]"))

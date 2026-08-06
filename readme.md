@@ -76,6 +76,7 @@ python rich_runner.py --time-limit 60
 | `--start-week`                        | Start scheduling from week (int or `now`)                               |
 | `--end-week`                          | End scheduling at week (int or `now`)                                 |
 | `--time-limit`                        | Time limit for solver in seconds                                        |
+| `--pharmacies`                        | Custom pharmacy list with zones (e.g. `1,centro;2,marina`)              |
 | `--live`                              | Print live latest found solutions as discovered                         |
 | `--csv`                               | Generate a CSV report of the schedule                                   |
 | `--csv-mode`                          | CSV mode: `compact` (1 row/week, full cols), `normal` (segmented), `tiny` (1 row/week, condensed col), `extended` (daily) |
@@ -87,8 +88,10 @@ python rich_runner.py --time-limit 60
 | `--prev-year`                         | Path to previous year CSV to prevent consecutive-year festivity repeats |
 | `--reschedule-csv`                    | CSV file of previous run for rescheduling                               |
 | `--reschedule-from`                   | Week number from which to reschedule                                    |
-| `--unavailable`                       | List of unavailable pharmacies (e.g. `1,22`)                            |
-| `--unavailable-interval`              | Interval of unavailability (e.g. `3,22,28`)                             |
+| `--force-open`                        | Force a pharmacy to be open in a given week (e.g. `1,22`)               |
+| `--force-closed`                      | Force a pharmacy to be closed in a given week (e.g. `1,22`)             |
+| `--pref-open`                         | Prefer a pharmacy to be open in a given week (e.g. `1,22`)              |
+| `--pref-closed`                       | Prefer a pharmacy to be closed in a given week (e.g. `1,22`)            |
 
 ### Festivities & CSV Report Management
 
