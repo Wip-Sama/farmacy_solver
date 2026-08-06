@@ -5,3 +5,4 @@ data/schedules/export_*
 *__pycache__*
 node_modules/
 frontend/dist/
+.idea

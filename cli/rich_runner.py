@@ -1,10 +1,7 @@
-import subprocess
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import time
-import csv
-import tempfile
 from datetime import date, datetime, timedelta
 from enum import Enum
 from typing import List, Optional, Annotated
@@ -139,7 +136,12 @@ def run_rich_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic
         console.print("[red]The 'clingo' Python module is not installed. Please install it using 'pip install clingo'.[/red]")
         sys.exit(1)
 
-    ctl = clingo.Control()
+    ctl = clingo.Control(
+        arguments=[]
+        # arguments=["--opt-strat=usc"],
+        # arguments=["--parallel-mode=4"],
+        # arguments=["--parallel-mode=4", "--opt-strat=usc"],
+    )
     for f in files:
         ctl.load(f)
 
