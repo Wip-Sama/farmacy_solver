@@ -362,6 +362,7 @@ def build_tasks_for_profile(profile, time_limits, runs_dir, fc_weeks, pc_weeks, 
                 str(y),
                 "--time-limit",
                 str(tl),
+                "--fdotw", "saturday"
             ]
             if prev_year_csv:
                 cmd.extend(["--prev-year", prev_year_csv])
@@ -412,6 +413,7 @@ def build_tasks_for_profile(profile, time_limits, runs_dir, fc_weeks, pc_weeks, 
                     resched_csv,
                     "--time-limit",
                     str(tl),
+                    "--fdotw", "saturday"
                 ],
                 "run_type": "Reschedule_2026",
                 "desc": "Reschedule from now based on schedule_2026.csv",
@@ -444,6 +446,7 @@ def build_tasks_for_profile(profile, time_limits, runs_dir, fc_weeks, pc_weeks, 
                     corrected_csv,
                     "--time-limit",
                     str(tl),
+                    "--fdotw", "saturday"
                 ],
                 "run_type": "Corrected_2026",
                 "desc": "Corrected 2026 based on schedule_2025.csv",
@@ -484,6 +487,7 @@ def build_tasks_for_profile(profile, time_limits, runs_dir, fc_weeks, pc_weeks, 
                 str(tl),
                 "--prev-year",
                 prev_year_csv,
+                "--fdotw", "saturday"
             ]
             if fc_str:
                 cmd.extend(["--force-closed", fc_str])
@@ -896,7 +900,7 @@ def main():
     args = parser.parse_args()
     
     # time_limits = [5]
-    time_limits = [5,15,30,60]
+    time_limits = [5, 15, 30, 60]
     fc_weeks = list(range(22, 30))
     pc_weeks = list(range(32, 34))
     
