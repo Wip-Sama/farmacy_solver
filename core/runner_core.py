@@ -242,8 +242,6 @@ def parse_fw_constraints(fw_list: list | None) -> list[tuple[int, int]]:
 def generate_dynamic_constraints(
     reschedule_csv: str | None,
     reschedule_from: int | None,
-    unavailables: list | None,
-    unavailable_intervals: list | None,
     start_week: int,
     end_week: int,
     festivities_dict: dict | None = None,
@@ -353,24 +351,6 @@ def generate_dynamic_constraints(
         lines.append("\n% Lock past weeks\n")
         lines.append(":- past_turno(S, F), not turno(S, F).\n")
         lines.append(":- turno(S, F), S < START_WEEK, not past_turno(S, F), reschedule_from(START_WEEK).\n")
-
-    if unavailables:
-        for u in unavailables:
-            try:
-                f, w = u.split(',')
-                lines.append(f":- turno({w}, {f}).\n")
-            except ValueError:
-                logging.error(f"Invalid format for --unavailable: {u}. Expected F,W")
-                sys.exit(1)
-
-    if unavailable_intervals:
-        for u in unavailable_intervals:
-            try:
-                f, w1, w2 = u.split(',')
-                lines.append(f":- turno(S, {f}), S >= {w1}, S <= {w2}.\n")
-            except ValueError:
-                logging.error(f"Invalid format for --unavailable-interval: {u}. Expected F,W1,W2")
-                sys.exit(1)
 
     # Festivities facts & choice rule
     if festivities_dict:

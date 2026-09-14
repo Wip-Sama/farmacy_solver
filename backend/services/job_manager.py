@@ -267,8 +267,6 @@ class JobManager:
             dynamic_file = generate_dynamic_constraints(
                 reschedule_csv=res_csv,
                 reschedule_from=res_from_week,
-                unavailables=unavailables if unavailables else None,
-                unavailable_intervals=None,
                 start_week=1,
                 end_week=52,
                 festivities_dict=festivities_dict,
