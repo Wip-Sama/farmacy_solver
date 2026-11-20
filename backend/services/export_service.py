@@ -1,8 +1,10 @@
 import logging
-from pathlib import Path
-from typing import List, Dict, Any
-from datetime import datetime, date, timedelta
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List
+
 from PIL import Image, ImageDraw, ImageFont
+
+from core.file_utils import atomic_write_path
 
 def generate_schedule_png(
     year: int,
@@ -321,7 +323,7 @@ def generate_schedule_png(
         # Footer Watermark
         draw.text((24, height - 25), watermark_text, fill=subtext_color, font=font_small)
 
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    img.save(output_path, "PNG")
+    with atomic_write_path(output_path) as tmp_path:
+        img.save(str(tmp_path), "PNG")
     logging.info(f"Generated schedule PNG chart ({mode}, {orientation}, label={pharmacy_label}) at {output_path}")
 

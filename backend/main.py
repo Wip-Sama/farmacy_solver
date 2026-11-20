@@ -12,8 +12,8 @@ if PROJECT_ROOT not in sys.path:
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from backend.api.routes import router as api_router
 from backend.api.ws import router as ws_router
@@ -27,9 +27,9 @@ class SPAStaticFiles(StaticFiles):
     """StaticFiles handler that falls back to index.html for SPA client-side routes."""
 
     async def get_response(self, path: str, scope):
-        clean_path = path.lstrip("/")
+        clean_path = path.replace("\\", "/").lstrip("/")
         if clean_path == "api" or clean_path.startswith("api/"):
-            raise StarletteHTTPException(status_code=404, detail="Not Found")
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
 
         try:
             response = await super().get_response(path, scope)

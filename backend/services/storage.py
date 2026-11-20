@@ -1,7 +1,9 @@
 import json
 import logging
+import os
 import re
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from backend.schemas.schedule import ScheduleMetaSchema
@@ -13,6 +15,7 @@ from core.date_utils import (
     get_week_start_date,
     resolve_festivities_dict,
 )
+from core.file_utils import atomic_write_path
 
 
 def get_settings() -> SettingsSchema:
@@ -29,14 +32,18 @@ def get_settings() -> SettingsSchema:
     logging.info("[AUDIT] settings.json not found; using default SettingsSchema")
     return SettingsSchema()
 
+def _atomic_write_json(target_path: Path, payload: Any) -> None:
+    """Writes JSON payload to a temporary file and atomically replaces target_path."""
+    with atomic_write_path(target_path) as tmp_path:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+
+
 def save_settings(settings: SettingsSchema) -> SettingsSchema:
     """Atomically writes settings to settings.json."""
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    temp_path = SETTINGS_FILE.with_suffix(".tmp")
-    data = settings.model_dump()
-    with open(temp_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    temp_path.replace(SETTINGS_FILE)
+    _atomic_write_json(SETTINGS_FILE, settings.model_dump())
     logging.info("[AUDIT] Successfully saved settings to settings.json")
     return settings
 
@@ -156,8 +163,6 @@ def get_schedule_rows(year: int, mode: str = "compact") -> list[dict[str, Any]]:
 
 
 def save_schedule_metadata(year: int, meta: ScheduleMetaSchema):
-    """Saves metadata companion JSON for a generated schedule CSV."""
-    SCHEDULES_DIR.mkdir(parents=True, exist_ok=True)
+    """Atomically saves metadata companion JSON for a generated schedule CSV."""
     meta_file = SCHEDULES_DIR / f"schedule_{year}.meta.json"
-    with open(meta_file, "w", encoding="utf-8") as f:
-        json.dump(meta.model_dump(), f, indent=2, ensure_ascii=False)
+    _atomic_write_json(meta_file, meta.model_dump())

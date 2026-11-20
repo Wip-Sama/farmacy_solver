@@ -5,6 +5,7 @@ import re
 from collections import defaultdict
 
 from core.date_utils import get_days_in_week, get_week_date, parse_first_day_of_week
+from core.file_utils import atomic_write_path
 
 __all__ = [
     "extract_pharmacy_ids",
@@ -231,130 +232,134 @@ def generate_csv_report(
         sorted_f_ids = list(range(1, 11)) # Fallback di sicurezza estrema
 
     try:
-        with open(filename, mode='w', newline='', encoding='utf-8') as file:
-            writer = csv.writer(file)
+        with atomic_write_path(filename) as tmp_path:
+            with open(tmp_path, mode='w', newline='', encoding='utf-8') as file:
+                writer = csv.writer(file)
 
-            solver_str = run_info.get('solver', 'N/A') if run_info else 'N/A'
-            time_str = f"{run_info.get('time', 0):.2f}s" if run_info else 'N/A'
-            map_str = ",".join(f"{k}:{v}" for k, v in sorted(pharmacy_map.items())) if pharmacy_map else "none"
-            meta_str = f"# Metadata: Year={year} | Solver={solver_str} | Time={time_str} | Mode={csv_mode} | Direction={csv_direction} | FirstDayOfWeek={first_day_of_week} | Mappings={map_str}"
-            writer.writerow([meta_str])
+                solver_str = run_info.get('solver', 'N/A') if run_info else 'N/A'
+                time_str = f"{run_info.get('time', 0):.2f}s" if run_info else 'N/A'
+                map_str = ",".join(f"{k}:{v}" for k, v in sorted(pharmacy_map.items())) if pharmacy_map else "none"
+                meta_str = f"# Metadata: Year={year} | Solver={solver_str} | Time={time_str} | Mode={csv_mode} | Direction={csv_direction} | FirstDayOfWeek={first_day_of_week} | Mappings={map_str}"
+                writer.writerow([meta_str])
 
-            if csv_direction == "row":
-                month_names = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
-                               "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
-                
-                header_row1 = []
-                for m_name in month_names:
-                    header_row1.extend([m_name, "", "", ""])
-                writer.writerow(header_row1)
+                if csv_direction == "row":
+                    month_names = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
+                                   "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
+                    
+                    header_row1 = []
+                    for m_name in month_names:
+                        header_row1.extend([m_name, "", "", ""])
+                    writer.writerow(header_row1)
 
-                header_row2 = []
-                for _ in range(12):
-                    header_row2.extend(["Giorno", "Lu-Do", "Festività", "Farmacie di Turno"])
-                writer.writerow(header_row2)
+                    header_row2 = []
+                    for _ in range(12):
+                        header_row2.extend(["Giorno", "Lu-Do", "Festività", "Farmacie di Turno"])
+                    writer.writerow(header_row2)
 
-                month_days = defaultdict(dict)
-                for week in sorted(schedule.keys()):
-                    for day_date in get_days_in_week(week, year, first_day_of_week):
-                        m_idx = day_date.month
-                        d_idx = day_date.day
-                        dow_str = ["L", "M", "M", "G", "V", "S", "D"][day_date.weekday()]
-                        fest_name = fest_dict.get(day_date, "")
-                        f_ids = sorted(schedule[week])
-                        f_names = "-".join(get_pharmacy_name(f) for f in f_ids)
-                        month_days[m_idx][d_idx] = (dow_str, fest_name, f_names)
-
-                for d in range(1, 32):
-                    grid_row = []
-                    for m in range(1, 13):
-                        if d in month_days[m]:
-                            dow, fest, f_str = month_days[m][d]
-                            grid_row.extend([d, dow, fest, f_str])
-                        else:
-                            grid_row.extend(["", "", "", ""])
-                    writer.writerow(grid_row)
-
-            else:
-                if csv_mode == "tiny":
-                    header = ['Settimana', 'Data Inizio', 'Festività', 'Farmacie di Turno']
-                    writer.writerow(header)
-                    for week in sorted(schedule.keys()):
-                        week_days = get_days_in_week(week, year, first_day_of_week)
-                        start_str = week_days[0].strftime("%Y-%m-%d") if week_days else get_week_date(week, year, first_day_of_week)
-                        week_festivities = []
-                        for day_date in week_days:
-                            fn = fest_dict.get(day_date, "")
-                            if fn and fn not in week_festivities:
-                                week_festivities.append(fn)
-                        fest_label = " / ".join(week_festivities)
-                        f_names = "-".join(get_pharmacy_name(f) for f in sorted(schedule[week]))
-                        writer.writerow([week, start_str, fest_label, f_names])
-
-                elif csv_mode == "compact":
-                    header = ['Settimana', 'Data Inizio', 'Festività'] + [get_pharmacy_name(i) for i in sorted_f_ids]
-                    writer.writerow(header)
-                    for week in sorted(schedule.keys()):
-                        week_days = get_days_in_week(week, year, first_day_of_week)
-                        start_str = week_days[0].strftime("%Y-%m-%d") if week_days else get_week_date(week, year, first_day_of_week)
-                        week_festivities = []
-                        for day_date in week_days:
-                            fn = fest_dict.get(day_date, "")
-                            if fn and fn not in week_festivities:
-                                week_festivities.append(fn)
-                        fest_label = " / ".join(week_festivities)
-                        f_assigned = set(schedule[week])
-                        row = [week, start_str, fest_label]
-                        for i in sorted_f_ids:
-                            row.append(1 if i in f_assigned else "")
-                        writer.writerow(row)
-
-                elif csv_mode == "extended":
-                    header = ['Settimana', 'Data', 'Giorno', 'Festività'] + [get_pharmacy_name(i) for i in sorted_f_ids]
-                    writer.writerow(header)
+                    month_days = defaultdict(dict)
                     for week in sorted(schedule.keys()):
                         for day_date in get_days_in_week(week, year, first_day_of_week):
+                            m_idx = day_date.month
+                            d_idx = day_date.day
                             dow_str = ["L", "M", "M", "G", "V", "S", "D"][day_date.weekday()]
                             fest_name = fest_dict.get(day_date, "")
-                            f_assigned = set(schedule[week])
-                            row = [week, day_date.strftime("%Y-%m-%d"), dow_str, fest_name]
-                            for i in sorted_f_ids:
-                                row.append(1 if i in f_assigned else "")
-                            writer.writerow(row)
+                            f_ids = sorted(schedule[week])
+                            f_names = "-".join(get_pharmacy_name(f) for f in f_ids)
+                            month_days[m_idx][d_idx] = (dow_str, fest_name, f_names)
 
-                else: # normal mode
-                    header = ['Settimana', 'Data', 'Festività'] + [get_pharmacy_name(i) for i in sorted_f_ids]
-                    writer.writerow(header)
-                    for week in sorted(schedule.keys()):
-                        days_details = []
-                        for day_date in get_days_in_week(week, year, first_day_of_week):
-                            fest_name = fest_dict.get(day_date, "")
-                            f_assigned = set(schedule[week])
-                            days_details.append((day_date, fest_name, f_assigned))
-
-                        if not days_details:
-                            continue
-
-                        current_group = [days_details[0]]
-                        groups = []
-                        for d_info in days_details[1:]:
-                            prev = current_group[-1]
-                            if d_info[1] == prev[1] and d_info[2] == prev[2]:
-                                current_group.append(d_info)
+                    for d in range(1, 32):
+                        grid_row = []
+                        for m in range(1, 13):
+                            if d in month_days[m]:
+                                dow, fest, f_str = month_days[m][d]
+                                grid_row.extend([d, dow, fest, f_str])
                             else:
-                                groups.append(current_group)
-                                current_group = [d_info]
-                        if current_group:
-                            groups.append(current_group)
+                                grid_row.extend(["", "", "", ""])
+                        writer.writerow(grid_row)
 
-                        for group in groups:
-                            start_date_str = group[0][0].strftime("%Y-%m-%d")
-                            fest_label = group[0][1]
-                            f_assigned = group[0][2]
-                            row = [week, start_date_str, fest_label]
+                else:
+                    if csv_mode == "tiny":
+                        header = ['Settimana', 'Data Inizio', 'Festività', 'Farmacie di Turno']
+                        writer.writerow(header)
+                        for week in sorted(schedule.keys()):
+                            week_days = get_days_in_week(week, year, first_day_of_week)
+                            start_str = week_days[0].strftime("%Y-%m-%d") if week_days else get_week_date(week, year, first_day_of_week)
+                            week_festivities = []
+                            for day_date in week_days:
+                                fn = fest_dict.get(day_date, "")
+                                if fn and fn not in week_festivities:
+                                    week_festivities.append(fn)
+                            fest_label = " / ".join(week_festivities)
+                            f_names = "-".join(get_pharmacy_name(f) for f in sorted(schedule[week]))
+                            writer.writerow([week, start_str, fest_label, f_names])
+
+                    elif csv_mode == "compact":
+                        header = ['Settimana', 'Data Inizio', 'Festività'] + [get_pharmacy_name(i) for i in sorted_f_ids]
+                        writer.writerow(header)
+                        for week in sorted(schedule.keys()):
+                            week_days = get_days_in_week(week, year, first_day_of_week)
+                            start_str = week_days[0].strftime("%Y-%m-%d") if week_days else get_week_date(week, year, first_day_of_week)
+                            week_festivities = []
+                            for day_date in week_days:
+                                fn = fest_dict.get(day_date, "")
+                                if fn and fn not in week_festivities:
+                                    week_festivities.append(fn)
+                            fest_label = " / ".join(week_festivities)
+                            f_assigned = set(schedule[week])
+                            row = [week, start_str, fest_label]
                             for i in sorted_f_ids:
                                 row.append(1 if i in f_assigned else "")
                             writer.writerow(row)
+
+                    elif csv_mode == "extended":
+                        header = ['Settimana', 'Data', 'Giorno', 'Festività'] + [get_pharmacy_name(i) for i in sorted_f_ids]
+                        writer.writerow(header)
+                        for week in sorted(schedule.keys()):
+                            for day_date in get_days_in_week(week, year, first_day_of_week):
+                                dow_str = ["L", "M", "M", "G", "V", "S", "D"][day_date.weekday()]
+                                fest_name = fest_dict.get(day_date, "")
+                                f_assigned = set(schedule[week])
+                                row = [week, day_date.strftime("%Y-%m-%d"), dow_str, fest_name]
+                                for i in sorted_f_ids:
+                                    row.append(1 if i in f_assigned else "")
+                                writer.writerow(row)
+
+                    else: # normal mode
+                        header = ['Settimana', 'Data', 'Festività'] + [get_pharmacy_name(i) for i in sorted_f_ids]
+                        writer.writerow(header)
+                        for week in sorted(schedule.keys()):
+                            days_details = []
+                            for day_date in get_days_in_week(week, year, first_day_of_week):
+                                fest_name = fest_dict.get(day_date, "")
+                                f_assigned = set(schedule[week])
+                                days_details.append((day_date, fest_name, f_assigned))
+
+                            if not days_details:
+                                continue
+
+                            current_group = [days_details[0]]
+                            groups = []
+                            for d_info in days_details[1:]:
+                                prev = current_group[-1]
+                                if d_info[1] == prev[1] and d_info[2] == prev[2]:
+                                    current_group.append(d_info)
+                                else:
+                                    groups.append(current_group)
+                                    current_group = [d_info]
+                            if current_group:
+                                groups.append(current_group)
+
+                            for group in groups:
+                                start_date_str = group[0][0].strftime("%Y-%m-%d")
+                                fest_label = group[0][1]
+                                f_assigned = group[0][2]
+                                row = [week, start_date_str, fest_label]
+                                for i in sorted_f_ids:
+                                    row.append(1 if i in f_assigned else "")
+                                writer.writerow(row)
+
+                file.flush()
+                os.fsync(file.fileno())
 
         logging.info(f"CSV report generated successfully at: {filename}")
     except Exception as e:

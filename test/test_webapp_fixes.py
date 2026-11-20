@@ -6,19 +6,23 @@ import threading
 import time
 import unittest
 from datetime import date
+from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from fastapi.testclient import TestClient
 
+import backend.services.storage as storage_service
 from backend.main import app
-from backend.schemas.schedule import ScheduleGenerateRequest
+from backend.schemas.schedule import ScheduleGenerateRequest, ScheduleMetaSchema
 from backend.schemas.ws import WSEvent
 from backend.services.export_service import generate_schedule_png
 from backend.services.job_manager import JobManager
 from core.config import ASP_DIR
+from core.csv_utils import generate_csv_report
 from core.date_utils import parse_custom_date, resolve_festivities_dict
+from core.file_utils import atomic_write_path
 from core.runner_core import generate_dynamic_constraints, run_clingo
 
 
@@ -183,6 +187,56 @@ class TestWebappFixes(unittest.TestCase):
         finally:
             if os.path.exists(dyn_file):
                 os.remove(dyn_file)
+
+    def test_atomic_write_preserves_existing_file_on_error_and_leaves_no_tmp(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            target = Path(tmp_dir) / "data.json"
+            target.write_text('{"ok": true}', encoding="utf-8")
+
+            with self.assertRaises(RuntimeError):
+                with atomic_write_path(target) as tmp_path:
+                    tmp_path.write_text('{"corrupt":', encoding="utf-8")
+                    raise RuntimeError("simulated crash")
+
+            self.assertEqual(target.read_text(encoding="utf-8"), '{"ok": true}')
+            self.assertEqual(list(Path(tmp_dir).glob("*.tmp")), [])
+
+    def test_save_metadata_and_csv_atomic_writes_and_missing_fallbacks(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            sched_dir = Path(tmp_dir) / "schedules"
+            sched_dir.mkdir(parents=True, exist_ok=True)
+            csv_path = sched_dir / "schedule_2098.csv"
+            generate_csv_report({1: [1, 7]}, str(csv_path), year=2098, csv_mode="compact")
+            self.assertTrue(csv_path.exists())
+            self.assertEqual(list(sched_dir.glob("*.tmp")), [])
+
+            with (
+                patch.object(storage_service, "SCHEDULES_DIR", sched_dir),
+                patch.object(storage_service, "PROJECT_ROOT", Path(tmp_dir)),
+            ):
+                # Missing .meta.json falls back cleanly using CSV mtime
+                listed = storage_service.list_schedules()
+                self.assertEqual(len(listed), 1)
+                self.assertEqual(listed[0]["year"], 2098)
+                self.assertIsNone(listed[0]["execution_time_seconds"])
+
+                # Save metadata atomically and confirm no .tmp left behind
+                meta = ScheduleMetaSchema(
+                    year=2098,
+                    filename="schedule_2098.csv",
+                    generated_at="2026-11-20T12:00:00",
+                    execution_time_seconds=1.5,
+                )
+                storage_service.save_schedule_metadata(2098, meta)
+                self.assertTrue((sched_dir / "schedule_2098.meta.json").exists())
+                self.assertEqual(list(sched_dir.glob("*.tmp")), [])
+
+                # Missing CSV returns empty list in get_schedule_rows
+                self.assertEqual(storage_service.get_schedule_rows(2099), [])
+
+        client = TestClient(app)
+        res_export = client.get("/api/schedules/2099/export")
+        self.assertEqual(res_export.status_code, 404)
 
 
 if __name__ == "__main__":

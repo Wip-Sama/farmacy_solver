@@ -8,3 +8,4 @@ frontend/dist/
 .idea
 *.rar
 *.zip
+local_tests
