@@ -6,15 +6,20 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar'
 import { parseDate } from '@internationalized/date'
 
-const props = withDefaults(defineProps<{
-  modelValue?: string
-  placeholder?: string
-  class?: any
-}>(), {
-  modelValue: '',
-  placeholder: 'gg/mm',
-  class: ''
-})
+const props = withDefaults(
+  defineProps<{
+    modelValue?: string
+    placeholder?: string
+    year?: number
+    class?: any
+  }>(),
+  {
+    modelValue: '',
+    placeholder: 'gg/mm',
+    year: new Date().getFullYear(),
+    class: '',
+  }
+)
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void
@@ -23,28 +28,27 @@ const emit = defineEmits<{
 const isOpen = ref(false)
 const calendarValue = ref<any>(undefined)
 
-// Parse DD/MM string (e.g. "25/12") to CalendarDate for year 2026
-function parseDayMonth(str: string): any {
+// Parse DD/MM string (e.g. "25/12") to CalendarDate for the active year
+function parseDayMonth(str: string, activeYear: number): any {
   if (!str) return undefined
   try {
     const parts = str.split(/[\/\-.]/)
     if (parts.length >= 2) {
       const day = parseInt(parts[0], 10)
       const month = parseInt(parts[1], 10)
-      const year = parts.length === 3 ? parseInt(parts[2], 10) : 2026
+      const year = parts.length === 3 ? parseInt(parts[2], 10) : activeYear
       if (day > 0 && day <= 31 && month > 0 && month <= 12) {
         const paddedDay = day.toString().padStart(2, '0')
         const paddedMonth = month.toString().padStart(2, '0')
         return parseDate(`${year}-${paddedMonth}-${paddedDay}`)
       }
     }
-  } catch (e) {
-    // fallback
+  } catch {
+    // ignore invalid dates
   }
   return undefined
 }
 
-// Format CalendarDate to DD/MM string
 function formatDayMonth(date: any): string {
   if (!date) return ''
   const day = date.day.toString().padStart(2, '0')
@@ -52,14 +56,17 @@ function formatDayMonth(date: any): string {
   return `${day}/${month}`
 }
 
-watch(() => props.modelValue, (val) => {
-  calendarValue.value = parseDayMonth(val)
-}, { immediate: true })
+watch(
+  [() => props.modelValue, () => props.year],
+  ([val, yr]) => {
+    calendarValue.value = parseDayMonth(val, yr)
+  },
+  { immediate: true }
+)
 
 function handleDateSelect(val: any) {
   if (val) {
-    const formatted = formatDayMonth(val)
-    emit('update:modelValue', formatted)
+    emit('update:modelValue', formatDayMonth(val))
     isOpen.value = false
   }
 }
@@ -80,13 +87,13 @@ function handleClear(e: Event) {
         :class="[
           'justify-between text-left font-mono text-xs h-8 px-2.5 border-border/40 hover:bg-accent/50',
           !modelValue ? 'text-muted-foreground' : 'text-foreground font-semibold',
-          props.class
+          props.class,
         ]"
       >
         <span>{{ modelValue || placeholder }}</span>
         <div class="flex items-center gap-1 ml-2 shrink-0">
-          <span 
-            v-if="modelValue" 
+          <span
+            v-if="modelValue"
             class="hover:text-destructive p-0.5 rounded cursor-pointer"
             @click="handleClear"
           >

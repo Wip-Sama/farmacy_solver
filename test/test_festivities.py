@@ -1,19 +1,21 @@
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import unittest
-import tempfile
 import csv
+import tempfile
+import unittest
 from datetime import date
+
 from core.runner_core import (
+    generate_dynamic_constraints,
     get_italian_holidays,
     parse_festivities,
-    get_week_number_for_date,
     parse_prev_year_csv,
-    generate_dynamic_constraints
 )
-from core.terminal_display import parse_schedule, generate_csv_report
+from core.terminal_display import generate_csv_report, parse_schedule
+
 
 class TestFestivities(unittest.TestCase):
 

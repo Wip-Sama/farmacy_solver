@@ -1,18 +1,14 @@
-import sys
 import os
-import unittest
-import json
+import sys
 import tempfile
-from pathlib import Path
+import unittest
+
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from backend.main import app
-from backend.services.job_manager import job_manager
-from backend.services.storage import get_settings, save_settings
 from backend.services.export_service import generate_schedule_png
-from core.config import SCHEDULES_DIR
 
 
 class TestBackendFrontendIntegration(unittest.TestCase):

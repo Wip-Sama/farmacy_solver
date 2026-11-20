@@ -1,11 +1,15 @@
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import unittest
 import tempfile
-from core.csv_utils import generate_csv_report
+import unittest
+
 from core.validate_csv import validate_csv
+
+from core.csv_utils import generate_csv_report
+
 
 class TestCSVValidation(unittest.TestCase):
     def setUp(self):
@@ -94,7 +98,7 @@ class TestCSVValidation(unittest.TestCase):
         os.close(fd)
         try:
             generate_csv_report(self.valid_schedule, path, year=2025)
-            is_coherent, status, errors = validate_csv_asp(path)
+            is_coherent, status, _errors = validate_csv_asp(path)
             self.assertTrue(is_coherent)
             self.assertEqual(status, "SATISFIABLE (Coherent)")
         finally:

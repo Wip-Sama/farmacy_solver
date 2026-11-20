@@ -1,13 +1,14 @@
+
 from pydantic import BaseModel, Field
-from typing import List, Optional
+
 
 class CustomFestivity(BaseModel):
     name: str
-    date: Optional[str] = ""
+    date: str | None = ""
 
 class PharmacyPreference(BaseModel):
     pharmacy_id: int
-    date: Optional[str] = ""
+    date: str | None = ""
     state: str = "Closed"
 
 class PharmacySchema(BaseModel):
@@ -35,7 +36,7 @@ class SettingsSchema(BaseModel):
     first_day_of_week: str = Field(default="monday", description="First day of week (sunday, monday, etc.)")
     auto_festivities: bool = Field(default=True, description="Auto-generate Italian national holidays")
     time_limit: int = Field(default=55, description="ASP solver time limit in seconds")
-    regenerate_from: Optional[str] = Field(default=None, description="Start date/week for rescheduling")
-    pharmacies: List[PharmacySchema] = Field(default_factory=default_pharmacies)
-    custom_festivities: List[CustomFestivity] = Field(default_factory=list)
-    pharmacy_preferences: List[PharmacyPreference] = Field(default_factory=list)
+    regenerate_from: str | None = Field(default=None, description="Start date/week for rescheduling")
+    pharmacies: list[PharmacySchema] = Field(default_factory=default_pharmacies)
+    custom_festivities: list[CustomFestivity] = Field(default_factory=list)
+    pharmacy_preferences: list[PharmacyPreference] = Field(default_factory=list)

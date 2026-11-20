@@ -1,5 +1,5 @@
 # Stage 1: Build Frontend SPA
-FROM node:20-alpine AS frontend-builder
+FROM node:22-alpine AS frontend-builder
 WORKDIR /app/frontend
 
 COPY frontend/package*.json ./
@@ -47,7 +47,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8001/api/settings || exit 1
+  CMD curl -f http://localhost:8001/api/health || exit 1
 
 # Start FastAPI application
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8001"]

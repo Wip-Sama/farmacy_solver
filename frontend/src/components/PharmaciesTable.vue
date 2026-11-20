@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useAppStore } from '@/stores/appStore'
+import type { Pharmacy } from '@/stores/appStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -20,26 +21,44 @@ import {
 } from '@/components/ui/table'
 import { Plus, Trash2 } from 'lucide-vue-next'
 
+const props = defineProps<{
+  items?: Pharmacy[]
+}>()
+
+const emit = defineEmits<{
+  (e: 'update:items', val: Pharmacy[]): void
+}>()
+
 const store = useAppStore()
+
+const list = computed<Pharmacy[]>(() => {
+  return props.items !== undefined ? props.items : store.settings.pharmacies
+})
 
 const newName = ref('')
 const newLocation = ref('centro')
 
+function updateList(newList: Pharmacy[]) {
+  if (props.items !== undefined) {
+    emit('update:items', newList)
+  } else {
+    store.updateSettings({ pharmacies: newList })
+  }
+}
+
 function addPharmacy() {
   if (!newName.value.trim()) return
-  const nextId = store.settings.pharmacies.length > 0 
-    ? Math.max(...store.settings.pharmacies.map(p => p.id)) + 1 
-    : 1
+  const nextId = list.value.length > 0 ? Math.max(...list.value.map((p) => p.id)) + 1 : 1
   const updated = [
-    ...store.settings.pharmacies, 
-    { id: nextId, name: newName.value.trim(), location: newLocation.value }
+    ...list.value,
+    { id: nextId, name: newName.value.trim(), location: newLocation.value },
   ]
-  store.updateSettings({ pharmacies: updated })
+  updateList(updated)
   newName.value = ''
 }
 
 function updatePharmacy(index: number, field: 'id' | 'name' | 'location', value: any) {
-  const updated = [...store.settings.pharmacies]
+  const updated = [...list.value]
   if (field === 'id') {
     const parsed = parseInt(value, 10)
     updated[index] = { ...updated[index], id: isNaN(parsed) ? updated[index].id : parsed }
@@ -48,12 +67,12 @@ function updatePharmacy(index: number, field: 'id' | 'name' | 'location', value:
   } else if (field === 'location') {
     updated[index] = { ...updated[index], location: value }
   }
-  store.updateSettings({ pharmacies: updated })
+  updateList(updated)
 }
 
 function removePharmacy(index: number) {
-  const updated = store.settings.pharmacies.filter((_, i) => i !== index)
-  store.updateSettings({ pharmacies: updated })
+  const updated = list.value.filter((_, i) => i !== index)
+  updateList(updated)
 }
 </script>
 
@@ -63,7 +82,6 @@ function removePharmacy(index: number) {
       <h3 class="text-sm font-semibold text-foreground">Pharmacies</h3>
     </div>
 
-    <!-- Table -->
     <div class="rounded-md border border-border">
       <Table>
         <TableHeader>
@@ -75,11 +93,11 @@ function removePharmacy(index: number) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          <TableRow v-for="(pharm, index) in store.settings.pharmacies" :key="pharm.id">
+          <TableRow v-for="(pharm, index) in list" :key="pharm.id">
             <TableCell class="p-1.5 font-bold text-xs text-primary font-mono">
               <div class="flex items-center gap-1">
                 <span>F</span>
-                <Input 
+                <Input
                   type="number"
                   :model-value="pharm.id"
                   @change="(e: Event) => updatePharmacy(index, 'id', (e.target as HTMLInputElement).value)"
@@ -88,7 +106,7 @@ function removePharmacy(index: number) {
               </div>
             </TableCell>
             <TableCell class="p-1.5">
-              <Input 
+              <Input
                 :model-value="pharm.name"
                 @change="(e: Event) => updatePharmacy(index, 'name', (e.target as HTMLInputElement).value)"
                 placeholder="Pharmacy Name"
@@ -96,7 +114,10 @@ function removePharmacy(index: number) {
               />
             </TableCell>
             <TableCell class="p-1.5">
-              <Select :model-value="pharm.location" @update:model-value="(val: any) => updatePharmacy(index, 'location', String(val))">
+              <Select
+                :model-value="pharm.location"
+                @update:model-value="(val: any) => updatePharmacy(index, 'location', String(val))"
+              >
                 <SelectTrigger class="h-7 text-xs w-28">
                   <SelectValue />
                 </SelectTrigger>
@@ -107,9 +128,9 @@ function removePharmacy(index: number) {
               </Select>
             </TableCell>
             <TableCell class="text-right p-1.5">
-              <Button 
-                variant="ghost" 
-                size="icon" 
+              <Button
+                variant="ghost"
+                size="icon"
                 class="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
                 @click="removePharmacy(index)"
               >
@@ -117,7 +138,7 @@ function removePharmacy(index: number) {
               </Button>
             </TableCell>
           </TableRow>
-          <TableRow v-if="store.settings.pharmacies.length === 0">
+          <TableRow v-if="list.length === 0">
             <TableCell colspan="4" class="text-center text-xs text-muted-foreground italic py-4">
               No pharmacies defined.
             </TableCell>
@@ -126,11 +147,10 @@ function removePharmacy(index: number) {
       </Table>
     </div>
 
-    <!-- Add Row Form -->
     <div class="flex items-center gap-2 pt-1">
-      <Input 
-        v-model="newName" 
-        placeholder="Pharmacy Name (e.g. Centro)" 
+      <Input
+        v-model="newName"
+        placeholder="Pharmacy Name"
         class="h-8 text-xs flex-1"
         @keyup.enter="addPharmacy"
       />

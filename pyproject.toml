@@ -1,0 +1,20 @@
+[project]
+name = "pharmacy-solver"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "clingo>=5.8.3",
+    "fastapi>=0.163.1",
+    "pillow>=13.0.0",
+    "rich>=15.0.0",
+    "typer>=0.27.3",
+    "uvicorn>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.17.2",
+    "ty>=0.0.91",
+]

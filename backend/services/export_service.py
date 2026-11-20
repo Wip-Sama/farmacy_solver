@@ -202,8 +202,21 @@ def generate_schedule_png(
         num_rows = max(len(rendered_rows), 1)
         height = header_height + 32 + (num_rows * row_height) + footer_height
 
+        pharmacy_ids = sorted(
+            set(p_map.keys())
+            | {
+                p.get("id")
+                for r in rendered_rows
+                for p in r.get("pharmacies", [])
+                if isinstance(p, dict) and p.get("id") is not None
+            }
+        ) or list(range(1, 11))
+
+        col_p_start = 360
+        col_p_width = 95 if pharmacy_label == "names" else 75
+
         if mode == "compact":
-            width = 1350 if pharmacy_label == "names" else 1150
+            width = max(1000, col_p_start + len(pharmacy_ids) * col_p_width + 40)
         elif mode == "tiny":
             width = 850
         elif mode == "extended":
@@ -223,14 +236,13 @@ def generate_schedule_png(
         draw.rectangle([(0, y_hdr), (width, y_hdr + 32)], fill=header_bg)
 
         if mode == "compact":
-            col_wk, col_date, col_fest, col_p_start = 16, 85, 200, 360
-            col_p_width = 95 if pharmacy_label == "names" else 75
+            col_wk, col_date, col_fest = 16, 85, 200
             draw.text((col_wk, y_hdr + 8), "Wk", fill=text_color, font=font_header)
             draw.text((col_date, y_hdr + 8), "Data Inizio", fill=text_color, font=font_header)
             draw.text((col_fest, y_hdr + 8), "Festività", fill=text_color, font=font_header)
-            for i in range(1, 11):
-                h_name = get_pharm_header_name(i)
-                draw.text((col_p_start + (i - 1) * col_p_width, y_hdr + 8), h_name, fill=text_color, font=font_header)
+            for idx_p, pid in enumerate(pharmacy_ids):
+                h_name = get_pharm_header_name(pid)
+                draw.text((col_p_start + idx_p * col_p_width, y_hdr + 8), h_name, fill=text_color, font=font_header)
         elif mode == "extended":
             col_wk, col_date, col_dow, col_fest, col_pharm = 16, 85, 190, 240, 520
             draw.text((col_wk, y_hdr + 8), "Wk", fill=text_color, font=font_header)
@@ -286,10 +298,9 @@ def generate_schedule_png(
             assigned_ids = {p.get("id") for p in pharmacies if isinstance(p, dict)}
 
             if mode == "compact":
-                col_p_w = 95 if pharmacy_label == "names" else 75
-                for i in range(1, 11):
-                    x_col = col_p_start + (i - 1) * col_p_w
-                    if i in assigned_ids:
+                for idx_p, pid in enumerate(pharmacy_ids):
+                    x_col = col_p_start + idx_p * col_p_width
+                    if pid in assigned_ids:
                         draw.text((x_col + 8, y_curr + 8), "✓", fill=check_color, font=font_body)
             elif mode == "tiny":
                 p_disp = "-".join(get_pharm_display_name(p) for p in pharmacies)

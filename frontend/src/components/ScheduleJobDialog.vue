@@ -23,13 +23,25 @@ import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import FestivitiesTable from '@/components/FestivitiesTable.vue'
 import PreferencesTable from '@/components/PreferencesTable.vue'
-import { Play, Loader2, ChevronUp, ChevronDown, AlertTriangle } from 'lucide-vue-next'
+import DayMonthPicker from '@/components/DayMonthPicker.vue'
+import { Play, RefreshCw, Loader2, ChevronUp, ChevronDown, AlertTriangle } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 
 const store = useAppStore()
 const daysOfWeek = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 
-// Local run-specific temporary state (Requirement 1)
+const isRescheduleMode = computed(() => store.isRescheduleOpen)
+
+const isOpen = computed({
+  get: () => store.isGenerateOpen || store.isRescheduleOpen,
+  set: (val: boolean) => {
+    if (!val) {
+      store.isGenerateOpen = false
+      store.isRescheduleOpen = false
+    }
+  },
+})
+
 const runYear = ref(store.settings.year)
 const runUsePreviousYear = ref(store.settings.use_previous_year)
 const runFirstDayOfWeek = ref(store.settings.first_day_of_week)
@@ -37,23 +49,35 @@ const runAutoFestivities = ref(store.settings.auto_festivities)
 const runTimeLimit = ref(store.settings.time_limit)
 const runFestivities = ref<CustomFestivity[]>([])
 const runPreferences = ref<PharmacyPreference[]>([])
+const dateValue = ref('')
 
-watch(() => store.isGenerateOpen, (isOpen) => {
-  if (isOpen) {
-    runYear.value = store.settings.year
-    runUsePreviousYear.value = store.settings.use_previous_year
-    runFirstDayOfWeek.value = store.settings.first_day_of_week
-    runAutoFestivities.value = store.settings.auto_festivities
-    runTimeLimit.value = store.settings.time_limit
-    runFestivities.value = JSON.parse(JSON.stringify(store.settings.custom_festivities))
-    runPreferences.value = JSON.parse(JSON.stringify(store.settings.pharmacy_preferences))
-  }
-}, { immediate: true })
+function getCurrentWeekDateStr(): string {
+  const today = new Date()
+  const day = today.getDate().toString().padStart(2, '0')
+  const month = (today.getMonth() + 1).toString().padStart(2, '0')
+  return `${day}/${month}`
+}
 
-// Validation: When auto festivities is OFF, all festivities must have a valid date specified
+watch(
+  isOpen,
+  (opened) => {
+    if (opened) {
+      runYear.value = store.settings.year
+      runUsePreviousYear.value = store.settings.use_previous_year
+      runFirstDayOfWeek.value = store.settings.first_day_of_week
+      runAutoFestivities.value = store.settings.auto_festivities
+      runTimeLimit.value = store.settings.time_limit
+      dateValue.value = store.settings.regenerate_from || getCurrentWeekDateStr()
+      runFestivities.value = JSON.parse(JSON.stringify(store.settings.custom_festivities))
+      runPreferences.value = JSON.parse(JSON.stringify(store.settings.pharmacy_preferences))
+    }
+  },
+  { immediate: true }
+)
+
 const hasMissingFestivityDate = computed(() => {
   if (!runAutoFestivities.value) {
-    return runFestivities.value.some(f => !f.date || f.date.trim() === '')
+    return runFestivities.value.some((f) => !f.date || f.date.trim() === '')
   }
   return false
 })
@@ -76,46 +100,58 @@ function decrementTimeLimit() {
   }
 }
 
-function handleConfirmGenerate() {
+function handleConfirm() {
   if (hasMissingFestivityDate.value) {
-    toast.error('Cannot generate schedule: When auto festivities is OFF, all festivities must have a valid date.')
+    toast.error(
+      'Cannot generate schedule: When auto festivities is OFF, all festivities must have a valid date.'
+    )
     return
   }
-  store.isGenerateOpen = false
-  store.triggerGenerate({
+
+  const payload: Record<string, any> = {
     year: runYear.value,
     use_previous_year: runUsePreviousYear.value,
     first_day_of_week: runFirstDayOfWeek.value,
     auto_festivities: runAutoFestivities.value,
     time_limit: runTimeLimit.value,
     custom_festivities: runFestivities.value,
-    pharmacy_preferences: runPreferences.value
-  })
+    pharmacy_preferences: runPreferences.value,
+  }
+
+  if (isRescheduleMode.value) {
+    payload.regenerate_from = dateValue.value
+  }
+
+  isOpen.value = false
+  store.triggerGenerate(payload)
 }
 </script>
 
 <template>
-  <Dialog v-model:open="store.isGenerateOpen">
+  <Dialog v-model:open="isOpen">
     <DialogContent class="max-w-3xl max-h-[90vh] flex flex-col p-0 gap-0 border-border/40">
       <DialogHeader class="p-6 pb-4">
         <DialogTitle class="flex items-center gap-2 text-lg">
-          <Play class="h-5 w-5 text-primary" />
-          Generate Schedule
+          <RefreshCw v-if="isRescheduleMode" class="h-5 w-5 text-primary" />
+          <Play v-else class="h-5 w-5 text-primary" />
+          {{ isRescheduleMode ? 'Regenerate Schedule' : 'Generate Schedule' }}
         </DialogTitle>
       </DialogHeader>
 
       <Separator class="bg-border/30" />
 
       <ScrollArea class="flex-1 p-6 space-y-6 overflow-y-auto">
-        <!-- Validation Warning Alert -->
-        <div v-if="hasMissingFestivityDate" class="p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 flex items-center gap-2.5 text-xs text-amber-500 font-medium">
+        <div
+          v-if="hasMissingFestivityDate"
+          class="p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 flex items-center gap-2.5 text-xs text-amber-500 font-medium"
+        >
           <AlertTriangle class="h-4 w-4 shrink-0" />
-          <span>Auto festivities is OFF: Every custom festivity must have a valid date (gg/mm) specified before generating.</span>
+          <span>
+            Auto festivities is OFF: Every custom festivity must have a valid date (gg/mm) specified.
+          </span>
         </div>
 
-        <!-- Controls Grid -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Year Selector -->
           <div class="flex items-center justify-between p-3 rounded-lg border border-border/40 bg-card">
             <Label class="text-xs font-medium">Year</Label>
             <div class="flex items-center space-x-2">
@@ -131,22 +167,22 @@ function handleConfirmGenerate() {
             </div>
           </div>
 
-          <!-- Use Previous Year Switch -->
           <div class="flex items-center justify-between p-3 rounded-lg border border-border/40 bg-card">
-            <Label for="gen-use-prev-year" class="text-xs font-medium cursor-pointer">Use previous year</Label>
+            <Label for="run-use-prev-year" class="text-xs font-medium cursor-pointer">
+              Use previous year
+            </Label>
             <Switch
-              id="gen-use-prev-year"
+              id="run-use-prev-year"
               :model-value="runUsePreviousYear"
-              @update:model-value="(val: boolean) => runUsePreviousYear = val"
+              @update:model-value="(val: boolean) => (runUsePreviousYear = val)"
             />
           </div>
 
-          <!-- First Day of Week -->
           <div class="flex items-center justify-between p-3 rounded-lg border border-border/40 bg-card">
             <Label class="text-xs font-medium">First day of week</Label>
-            <Select 
+            <Select
               :model-value="runFirstDayOfWeek"
-              @update:model-value="(val: any) => runFirstDayOfWeek = String(val)"
+              @update:model-value="(val: any) => (runFirstDayOfWeek = String(val))"
             >
               <SelectTrigger class="h-8 text-xs w-32 capitalize">
                 <SelectValue />
@@ -159,18 +195,23 @@ function handleConfirmGenerate() {
             </Select>
           </div>
 
-          <!-- Auto Festivities Switch -->
           <div class="flex items-center justify-between p-3 rounded-lg border border-border/40 bg-card">
-            <Label for="gen-auto-fest" class="text-xs font-medium cursor-pointer">Auto festivities</Label>
+            <Label for="run-auto-fest" class="text-xs font-medium cursor-pointer">
+              Auto festivities
+            </Label>
             <Switch
-              id="gen-auto-fest"
+              id="run-auto-fest"
               :model-value="runAutoFestivities"
-              @update:model-value="(val: boolean) => runAutoFestivities = val"
+              @update:model-value="(val: boolean) => (runAutoFestivities = val)"
             />
           </div>
 
-          <!-- Time Limit -->
-          <div class="flex items-center justify-between p-3 rounded-lg border border-border/40 bg-card col-span-1 md:col-span-2">
+          <div
+            :class="[
+              'flex items-center justify-between p-3 rounded-lg border border-border/40 bg-card',
+              !isRescheduleMode ? 'col-span-1 md:col-span-2' : '',
+            ]"
+          >
             <Label class="text-xs font-medium">Time Limit (sec)</Label>
             <div class="flex items-center space-x-2">
               <span class="font-bold text-sm text-primary font-mono">{{ runTimeLimit }}</span>
@@ -184,32 +225,52 @@ function handleConfirmGenerate() {
               </div>
             </div>
           </div>
+
+          <div
+            v-if="isRescheduleMode"
+            class="flex items-center justify-between p-3 rounded-lg border border-border/40 bg-card"
+          >
+            <Label class="text-xs font-medium">Regenerate from</Label>
+            <DayMonthPicker v-model="dateValue" :year="runYear" placeholder="gg/mm" class="w-36" />
+          </div>
         </div>
 
-        <!-- Space replacing middle separator -->
-        <div class="h-4"></div>
+        <div class="h-4" />
 
-        <!-- Sub Tables bound to run-specific local state (Requirement 1 & 4) -->
         <div class="space-y-6">
-          <FestivitiesTable v-model:items="runFestivities" :auto-festivities="runAutoFestivities" />
-          <PreferencesTable v-model:items="runPreferences" />
+          <FestivitiesTable
+            v-model:items="runFestivities"
+            :auto-festivities="runAutoFestivities"
+            :year="runYear"
+          />
+          <PreferencesTable v-model:items="runPreferences" :year="runYear" />
         </div>
       </ScrollArea>
 
       <Separator class="bg-border/30" />
 
       <DialogFooter class="p-4 gap-2">
-        <Button variant="destructive" size="sm" @click="store.isGenerateOpen = false">
+        <Button variant="outline" size="sm" @click="isOpen = false">
           Cancel
         </Button>
-        <Button 
-          size="sm" 
+        <Button
+          size="sm"
           :disabled="store.isJobRunning || hasMissingFestivityDate"
-          @click="handleConfirmGenerate"
+          @click="handleConfirm"
           class="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Loader2 v-if="store.isJobRunning" class="h-4 w-4 animate-spin" />
-          <span>{{ store.isJobRunning ? 'Generating...' : 'Generate' }}</span>
+          <span>
+            {{
+              store.isJobRunning
+                ? isRescheduleMode
+                  ? 'Rescheduling...'
+                  : 'Generating...'
+                : isRescheduleMode
+                  ? 'Reschedule'
+                  : 'Generate'
+            }}
+          </span>
         </Button>
       </DialogFooter>
     </DialogContent>

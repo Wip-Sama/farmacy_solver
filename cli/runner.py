@@ -1,25 +1,27 @@
-import sys
-import os
 import ntpath
+import os
+import sys
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import argparse
 import logging
 import time
 from datetime import date
+
 from core.config import ASP_DIR
 from core.runner_core import (
-    parse_festivities,
     generate_dynamic_constraints,
+    parse_festivities,
+    parse_week_param,
     run_clingo,
     run_external_solver,
-    parse_week_param
 )
 from core.terminal_display import (
+    generate_csv_report,
     parse_schedule,
-    print_weekly_schedule,
-    print_shift_statistics,
     print_optimization_cost,
-    generate_csv_report
+    print_shift_statistics,
+    print_weekly_schedule,
 )
 
 # Configure logging
@@ -131,8 +133,7 @@ def main():
     end_week = parse_week_param(args.end_week, args.year, args.first_day_of_week) or total_weeks
     reschedule_from = parse_week_param(args.reschedule_from, args.year, args.first_day_of_week)
 
-    if args.reschedule_csv:
-        if reschedule_from is None:
+    if args.reschedule_csv and reschedule_from is None:
             if start_week > 1:
                 reschedule_from = start_week
             else:

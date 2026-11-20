@@ -1,10 +1,13 @@
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import unittest
 import tempfile
+import unittest
+
 from core.csv_utils import generate_csv_report, read_csv_schedule
+
 
 class TestCSVComparison(unittest.TestCase):
     def setUp(self):
@@ -21,8 +24,8 @@ class TestCSVComparison(unittest.TestCase):
             generate_csv_report(self.sched1, path1, year=2025, csv_mode="compact")
             generate_csv_report(self.sched2, path2, year=2025, csv_mode="compact")
 
-            read1, meta1, _, _, _ = read_csv_schedule(path1)
-            read2, meta2, _, _, _ = read_csv_schedule(path2)
+            read1, _meta1, _, _, _ = read_csv_schedule(path1)
+            read2, _meta2, _, _, _ = read_csv_schedule(path2)
 
             self.assertEqual(set(read1[1]), {1, 7})
             self.assertEqual(set(read1[2]), {2, 8})

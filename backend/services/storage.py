@@ -1,16 +1,19 @@
-import os
 import json
 import logging
 import re
-from pathlib import Path
-from typing import Dict, Any, List
-from datetime import datetime, date, timedelta
+from datetime import date, datetime, timedelta
+from typing import Any
 
-from core.config import DATA_DIR, SCHEDULES_DIR, SETTINGS_FILE, PROJECT_ROOT
-from core.csv_utils import read_csv_schedule, get_week_date
-from core.runner_core import get_italian_holidays, get_week_start_date, get_summer_weeks
-from backend.schemas.settings import SettingsSchema
 from backend.schemas.schedule import ScheduleMetaSchema
+from backend.schemas.settings import SettingsSchema
+from core.config import DATA_DIR, PROJECT_ROOT, SCHEDULES_DIR, SETTINGS_FILE
+from core.csv_utils import read_csv_schedule
+from core.date_utils import (
+    get_summer_weeks,
+    get_week_start_date,
+    resolve_festivities_dict,
+)
+
 
 def get_settings() -> SettingsSchema:
     """Reads settings.json or returns default settings if file does not exist."""
@@ -37,7 +40,7 @@ def save_settings(settings: SettingsSchema) -> SettingsSchema:
     logging.info("[AUDIT] Successfully saved settings to settings.json")
     return settings
 
-def list_schedules() -> List[Dict[str, Any]]:
+def list_schedules() -> list[dict[str, Any]]:
     """Lists all available CSV schedules in data/schedules and schedules/ with metadata."""
     SCHEDULES_DIR.mkdir(parents=True, exist_ok=True)
     schedules = []
@@ -75,7 +78,7 @@ def list_schedules() -> List[Dict[str, Any]]:
 
     return sorted(schedules, key=lambda x: x["year"])
 
-def get_schedule_rows(year: int, mode: str = "compact") -> List[Dict[str, Any]]:
+def get_schedule_rows(year: int, mode: str = "compact") -> list[dict[str, Any]]:
     """Parses a schedule CSV and returns structured week rows for the frontend."""
     search_paths = [
         SCHEDULES_DIR / f"schedule_{year}.csv",
@@ -93,7 +96,7 @@ def get_schedule_rows(year: int, mode: str = "compact") -> List[Dict[str, Any]]:
     if not csv_file:
         return []
 
-    schedule, metadata, pharmacy_map, past_festivities, raw_rows = read_csv_schedule(str(csv_file))
+    schedule, _metadata, pharmacy_map, _past_festivities, _raw_rows = read_csv_schedule(str(csv_file))
     current_year = date.today().year
     current_week = date.today().isocalendar()[1]
 
@@ -102,24 +105,11 @@ def get_schedule_rows(year: int, mode: str = "compact") -> List[Dict[str, Any]]:
     settings_loc_map = {p.id: p.location for p in settings.pharmacies}
 
     # Resolve festivities dictionary (Italian national + custom)
-    festivities_dict = {}
-    if settings.auto_festivities:
-        festivities_dict.update(get_italian_holidays(year))
-
-    for cust_fest in settings.custom_festivities:
-        name = cust_fest.name
-        d_str = cust_fest.date.strip()
-        try:
-            if "/" in d_str:
-                parts = d_str.split("/")
-                d_obj = date(year, int(parts[1]), int(parts[0]))
-            elif "-" in d_str:
-                d_obj = datetime.strptime(d_str, "%Y-%m-%d").date()
-            else:
-                continue
-            festivities_dict[d_obj] = name
-        except Exception:
-            pass
+    festivities_dict = resolve_festivities_dict(
+        year=year,
+        auto_festivities=settings.auto_festivities,
+        custom_festivities=settings.custom_festivities,
+    )
 
     rows = []
     first_dow = settings.first_day_of_week or "monday"

@@ -1,9 +1,11 @@
-import sys
-import os
 import argparse
-import pandas as pd
+import os
 import re
+import sys
 from collections import defaultdict
+
+import pandas as pd
+
 
 def parse_arguments():
     """Gestisce gli argomenti passati da riga di comando (argv). Funziona SOLO con file."""
@@ -101,7 +103,7 @@ def load_and_parse_excel(file_path):
                     week_labels[week] = week_label
                 week_counter += 1
                 
-        except Exception as e:
+        except Exception:
             continue
 
     return schedule, week_labels

@@ -1,8 +1,8 @@
-import sys
-import os
 import argparse
-import tempfile
 import logging
+import os
+import sys
+import tempfile
 from datetime import date
 
 # 1. Force the Python Path to always find the 'core' folder
@@ -10,9 +10,9 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(SCRIPT_DIR, "..")))
 
 # 2. Import correctly from the core folder
-from core.csv_utils import read_csv_schedule
-from core.runner_core import get_week_number_for_date, get_italian_holidays
 from core.config import ASP_DIR
+from core.csv_utils import read_csv_schedule
+from core.runner_core import get_italian_holidays, get_week_number_for_date
 
 
 def get_summer_weeks(year: int = 2025, first_day_of_week: int | str = 0) -> tuple[int, int]:
@@ -22,7 +22,7 @@ def get_summer_weeks(year: int = 2025, first_day_of_week: int | str = 0) -> tupl
     return w_start, w_end
 
 
-def validate_csv(csv_path: str, prev_year_csv: str = None) -> tuple[bool, list[str]]:
+def validate_csv(csv_path: str, prev_year_csv: str | None = None) -> tuple[bool, list[str]]:
     """
     Validates a generated CSV schedule against ASP domain rules using Python inspection.
     Returns (is_valid, list_of_error_messages).
@@ -32,7 +32,7 @@ def validate_csv(csv_path: str, prev_year_csv: str = None) -> tuple[bool, list[s
     if not os.path.exists(csv_path):
         return False, [f"File not found: {csv_path}"]
     
-    schedule, metadata, pharmacy_map, past_festivities, raw_rows = read_csv_schedule(csv_path)
+    schedule, metadata, pharmacy_map, past_festivities, _raw_rows = read_csv_schedule(csv_path)
     
     if not schedule:
         errors.append("No weekly schedule assignments could be parsed from the CSV file.")
@@ -108,7 +108,7 @@ def validate_csv(csv_path: str, prev_year_csv: str = None) -> tuple[bool, list[s
     return is_valid, errors
 
 
-def validate_csv_asp(csv_path: str, prev_year_csv: str = None, year: int = None) -> tuple[bool, str, list[str]]:
+def validate_csv_asp(csv_path: str, prev_year_csv: str | None = None, year: int | None = None) -> tuple[bool, str, list[str]]:
     """
     Validates a CSV schedule by loading it as ASP facts into Clingo solver alongside domain.lp and constraints.lp.
     Returns (is_coherent, clingo_status_str, list_of_error_details).
@@ -122,7 +122,7 @@ def validate_csv_asp(csv_path: str, prev_year_csv: str = None, year: int = None)
         return False, "Clingo Not Available", [
             "The 'clingo' Python module is not installed. Please install it using 'pip install clingo'."]
     
-    schedule, metadata, pharmacy_map, past_festivities, _ = read_csv_schedule(csv_path)
+    schedule, metadata, _pharmacy_map, _past_festivities, _ = read_csv_schedule(csv_path)
     
     if not schedule:
         return False, "Empty Schedule", ["No weekly schedule assignments could be parsed from the CSV file."]

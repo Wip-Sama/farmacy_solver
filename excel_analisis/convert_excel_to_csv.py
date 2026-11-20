@@ -1,9 +1,9 @@
-import os
-import sys
 import csv
-import pandas as pd
 import datetime
+import os
 from collections import defaultdict
+
+import pandas as pd
 
 # 1. Pharmacy Mapping dictionary based on mapping_farmacie.jpg
 MAPPING_TEXT = """1,MONTORO
@@ -171,7 +171,7 @@ def convert_2026_excel(excel_path, out_csv_path):
     rows_out.append(header)
 
     # Output weekly schedule
-    sorted_weeks = sorted(list(week_shifts.keys()))
+    sorted_weeks = sorted(week_shifts.keys())
     for w in sorted_weeks:
         if w == 1:
             week_start_date = datetime.date(2026, 1, 1)

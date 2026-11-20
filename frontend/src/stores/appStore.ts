@@ -3,13 +3,6 @@ import { ref } from 'vue'
 import { useWebSocket } from '@vueuse/core'
 import { toast } from 'vue-sonner'
 
-const auditLog = (msg: string, data?: any) => {
-  if (import.meta.env.VITE_ENABLE_AUDIT_LOGS === 'true') {
-    if (data) console.info(`[AUDIT] ${msg}`, data)
-    else console.info(`[AUDIT] ${msg}`)
-  }
-}
-
 export interface CustomFestivity {
   name: string
   date: string
@@ -48,28 +41,15 @@ export interface ScheduleRow {
   is_summer?: boolean
 }
 
-const getApiBase = () => {
-  if (typeof window !== 'undefined' && window.location) {
-    if (window.location.port === '5173' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-      return `${window.location.protocol}//${window.location.hostname}:8001/api`
-    }
-    return `${window.location.origin}/api`
-  }
-  return 'http://127.0.0.1:8001/api'
-}
-
 const getWsUrl = () => {
   if (typeof window !== 'undefined' && window.location) {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = (window.location.port === '5173' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'))
-      ? `${window.location.hostname}:8001`
-      : window.location.host
-    return `${protocol}//${host}/api/ws`
+    return `${protocol}//${window.location.host}/api/ws`
   }
   return 'ws://127.0.0.1:8001/api/ws'
 }
 
-export const API_BASE = getApiBase()
+export const API_BASE = '/api'
 export const WS_URL = getWsUrl()
 
 export const useAppStore = defineStore('app', () => {
@@ -90,26 +70,23 @@ export const useAppStore = defineStore('app', () => {
       { id: 7, name: 'MARCELLINI', location: 'marina' },
       { id: 8, name: 'PHARMADUO', location: 'marina' },
       { id: 9, name: 'IORFIDA', location: 'marina' },
-      { id: 10, name: 'SAN LEONARDO', location: 'marina' }
+      { id: 10, name: 'SAN LEONARDO', location: 'marina' },
     ],
     custom_festivities: [],
-    pharmacy_preferences: []
+    pharmacy_preferences: [],
   })
 
-  const activeTab = ref<'schedules' | 'settings'>('schedules')
   const viewMode = ref<'compact' | 'extended'>('compact')
   const scheduleRows = ref<ScheduleRow[]>([])
   const availableYears = ref<number[]>([2025, 2026])
   const isJobRunning = ref(false)
-  const isProgressModalOpen = ref(false)
+  const runningJobYear = ref<number | null>(null)
   const isSettingsOpen = ref(false)
   const isGenerateOpen = ref(false)
   const isRescheduleOpen = ref(false)
   const isExportOpen = ref(false)
-  const jobProgressLines = ref<string[]>([])
 
-  // Connect WebSocket for zero-polling real-time multi-tab synchronization
-  const { status: wsStatus } = useWebSocket(WS_URL, {
+  useWebSocket(WS_URL, {
     autoReconnect: true,
     onMessage(_, event) {
       try {
@@ -118,47 +95,41 @@ export const useAppStore = defineStore('app', () => {
       } catch (e) {
         console.error('Failed to parse WebSocket message:', e)
       }
-    }
+    },
   })
 
   function handleWSEvent(event: { type: string; payload: any }) {
-    console.log('[WS Event]:', event.type, event.payload)
-
     if (event.type === 'SETTINGS_UPDATED') {
       settings.value = { ...settings.value, ...event.payload }
-      auditLog('Settings updated via WS', settings.value)
     } else if (event.type === 'JOB_STARTED') {
       isJobRunning.value = true
-      isProgressModalOpen.value = true
-      jobProgressLines.value = [event.payload.message || 'Starting ASP solver job...']
-      auditLog('Job started', event.payload)
-      toast.info(`⚡ Generating schedule for ${event.payload.year}...`, {
+      runningJobYear.value = event.payload?.year ?? settings.value.year
+      toast.info(`Generating schedule for ${runningJobYear.value}...`, {
         duration: Infinity,
         id: 'schedule-generating',
         action: {
           label: 'Cancel',
-          onClick: () => cancelJob()
-        }
+          onClick: () => cancelJob(),
+        },
       })
-    } else if (event.type === 'JOB_PROGRESS') {
-      if (event.payload.line) {
-        jobProgressLines.value.push(event.payload.line)
-      }
     } else if (event.type === 'JOB_COMPLETED') {
       isJobRunning.value = false
-      auditLog('Job completed', event.payload)
+      runningJobYear.value = null
       toast.dismiss('schedule-generating')
-      toast.success(`✅ Schedule for ${event.payload.year} generated successfully!`, {
-        description: `Completed in ${event.payload.execution_time_seconds}s`
+      toast.success(`Schedule for ${event.payload.year} generated!`, {
+        description: `Completed in ${event.payload.execution_time_seconds}s`,
       })
+      if (event.payload?.year) {
+        settings.value.year = event.payload.year
+      }
       fetchAvailableYears()
       fetchScheduleRows(settings.value.year)
     } else if (event.type === 'JOB_FAILED') {
       isJobRunning.value = false
-      auditLog('Job failed', event.payload)
+      runningJobYear.value = null
       toast.dismiss('schedule-generating')
-      toast.error(`❌ Scheduling failed for ${event.payload.year}`, {
-        description: event.payload.error
+      toast.error(`Scheduling stopped for ${event.payload.year}`, {
+        description: event.payload.error,
       })
     }
   }
@@ -168,16 +139,15 @@ export const useAppStore = defineStore('app', () => {
       const res = await fetch(`${API_BASE}/schedules/cancel`, { method: 'POST' })
       if (res.ok) {
         toast.dismiss('schedule-generating')
-        toast.info('Job cancellation requested...')
+        toast.info('Schedule generation cancelled.')
       } else {
         toast.error('Failed to cancel job.')
       }
-    } catch (e) {
+    } catch {
       toast.error('Network error cancelling job.')
     }
   }
 
-  // REST API Actions
   async function fetchSettings() {
     try {
       const res = await fetch(`${API_BASE}/settings`)
@@ -195,7 +165,9 @@ export const useAppStore = defineStore('app', () => {
       if (res.ok) {
         const data = await res.json()
         if (Array.isArray(data) && data.length > 0) {
-          const years = Array.from(new Set(data.map((item: any) => item.year))).sort((a: any, b: any) => a - b) as number[]
+          const years = Array.from(new Set(data.map((item: any) => item.year))).sort(
+            (a: any, b: any) => a - b
+          ) as number[]
           if (years.length > 0) {
             availableYears.value = years
           }
@@ -206,39 +178,30 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  async function updateSettings(newSettings: Partial<Settings>) {
+  async function updateSettings(newSettings: Partial<Settings>, showToast = false): Promise<boolean> {
     settings.value = { ...settings.value, ...newSettings }
-    try {
-      await fetch(`${API_BASE}/settings`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings.value)
-      })
-    } catch (e) {
-      console.error('Failed to save settings:', e)
-    }
-  }
-
-  async function saveCurrentSettings() {
     try {
       const res = await fetch(`${API_BASE}/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings.value)
+        body: JSON.stringify(settings.value),
       })
       if (res.ok) {
-        toast.success('Settings saved successfully!')
-      } else {
-        toast.error('Failed to save settings to server.')
+        if (showToast) toast.success('Settings saved successfully!')
+        return true
       }
+      if (showToast) toast.error('Failed to save settings to server.')
+      return false
     } catch (e) {
-      toast.error('Network error saving settings.')
+      console.error('Failed to save settings:', e)
+      if (showToast) toast.error('Network error saving settings.')
+      return false
     }
   }
 
   async function fetchScheduleRows(year: number) {
     try {
-      const res = await fetch(`${API_BASE}/schedules/${year}?mode=${viewMode.value}`)
+      const res = await fetch(`${API_BASE}/schedules/${year}`)
       if (res.ok) {
         scheduleRows.value = await res.json()
       }
@@ -256,16 +219,14 @@ export const useAppStore = defineStore('app', () => {
       auto_festivities: settings.value.auto_festivities,
       use_previous_year: settings.value.use_previous_year,
       first_day_of_week: settings.value.first_day_of_week,
-      ...payload
+      ...payload,
     }
-
-    auditLog('Triggering schedule generation with payload:', bodyData)
 
     try {
       const res = await fetch(`${API_BASE}/schedules/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyData)
+        body: JSON.stringify(bodyData),
       })
 
       if (res.status === 400) {
@@ -275,7 +236,7 @@ export const useAppStore = defineStore('app', () => {
       }
 
       if (res.status === 409) {
-        toast.warning('⚠️ A scheduling job is already running in another tab.')
+        toast.warning('A scheduling job is already running.')
         return
       }
 
@@ -283,30 +244,27 @@ export const useAppStore = defineStore('app', () => {
         const err = await res.json()
         toast.error('Failed to start schedule generation: ' + (err.detail || 'Unknown error'))
       }
-    } catch (e) {
+    } catch {
       toast.error('Network error triggering schedule generation.')
     }
   }
 
   return {
     settings,
-    activeTab,
     viewMode,
     scheduleRows,
     availableYears,
     isJobRunning,
-    isProgressModalOpen,
+    runningJobYear,
     isSettingsOpen,
     isGenerateOpen,
     isRescheduleOpen,
     isExportOpen,
-    jobProgressLines,
-    wsStatus,
     fetchSettings,
     fetchAvailableYears,
     updateSettings,
-    saveCurrentSettings,
     fetchScheduleRows,
-    triggerGenerate
+    triggerGenerate,
+    cancelJob,
   }
 })

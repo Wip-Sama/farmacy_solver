@@ -1,7 +1,9 @@
-import sys
-import os
 import argparse
+import os
+import sys
+
 from core.csv_utils import read_csv_schedule
+
 
 def compare_csv(file1_path: str, file2_path: str, summary_only: bool = False):
     """
@@ -14,15 +16,15 @@ def compare_csv(file1_path: str, file2_path: str, summary_only: bool = False):
         print(f"Error: File 2 not found: {file2_path}")
         sys.exit(1)
 
-    sched1, meta1, map1, fest1, _ = read_csv_schedule(file1_path)
-    sched2, meta2, map2, fest2, _ = read_csv_schedule(file2_path)
+    sched1, meta1, map1, _fest1, _ = read_csv_schedule(file1_path)
+    sched2, meta2, map2, _fest2, _ = read_csv_schedule(file2_path)
 
     merged_map = {**map1, **map2}
     def get_fname(fid):
         return merged_map.get(fid, f"F{fid}")
 
     print("=" * 80)
-    print(f" CSV Schedule Comparison")
+    print(" CSV Schedule Comparison")
     print(f" File 1: {file1_path}")
     print(f" File 2: {file2_path}")
     print("=" * 80)

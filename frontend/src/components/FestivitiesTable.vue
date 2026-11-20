@@ -19,6 +19,7 @@ import { Plus, Trash2 } from 'lucide-vue-next'
 const props = defineProps<{
   items?: CustomFestivity[]
   autoFestivities?: boolean
+  year?: number
 }>()
 
 const emit = defineEmits<{
@@ -34,6 +35,8 @@ const list = computed<CustomFestivity[]>(() => {
 const isAutoFest = computed<boolean>(() => {
   return props.autoFestivities !== undefined ? props.autoFestivities : store.settings.auto_festivities
 })
+
+const activeYear = computed<number>(() => props.year ?? store.settings.year)
 
 const newName = ref('')
 const newDate = ref('')
@@ -75,12 +78,10 @@ function removeFestivity(index: number) {
       </span>
     </div>
 
-    <!-- Explanation note from wireframe -->
-    <p class="text-xs text-muted-foreground italic leading-relaxed">
-      Questo blocco appare quando le festività automatiche sono disattivate. Permette di inserire o modificare festività personalizzate (es. Pasqua, Natale, Capodanno).
+    <p class="text-xs text-muted-foreground leading-relaxed">
+      Add custom or local holidays (e.g. Patron Saint). Dates are required when auto festivities is disabled.
     </p>
 
-    <!-- Table -->
     <div class="rounded-md border border-border/40 overflow-hidden">
       <Table>
         <TableHeader>
@@ -91,18 +92,18 @@ function removeFestivity(index: number) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          <TableRow 
-            v-for="(fest, index) in list" 
-            :key="index" 
+          <TableRow
+            v-for="(fest, index) in list"
+            :key="index"
             :class="[
               'border-b border-border/40 transition-colors',
-              !isAutoFest && (!fest.date || !fest.date.trim()) 
-                ? 'bg-red-500/5 hover:bg-red-500/10' 
-                : ''
+              !isAutoFest && (!fest.date || !fest.date.trim())
+                ? 'bg-red-500/5 hover:bg-red-500/10'
+                : '',
             ]"
           >
             <TableCell class="p-1.5">
-              <Input 
+              <Input
                 :model-value="fest.name"
                 @change="(e: Event) => updateFestivity(index, (e.target as HTMLInputElement).value, fest.date)"
                 placeholder="Festivity Name"
@@ -110,21 +111,24 @@ function removeFestivity(index: number) {
               />
             </TableCell>
             <TableCell class="p-1.5">
-              <DayMonthPicker 
-                :model-value="fest.date" 
+              <DayMonthPicker
+                :model-value="fest.date"
+                :year="activeYear"
                 @update:model-value="(val: string) => updateFestivity(index, fest.name, val)"
-                :class="cn(
-                  'w-36 transition-colors',
-                  !isAutoFest && (!fest.date || !fest.date.trim())
-                    ? 'border-red-500 bg-red-500/10 text-red-400 dark:border-red-500 dark:bg-red-950/40 dark:text-red-400 ring-1 ring-red-500/50 font-medium'
-                    : ''
-                )"
+                :class="
+                  cn(
+                    'w-36 transition-colors',
+                    !isAutoFest && (!fest.date || !fest.date.trim())
+                      ? 'border-red-500 bg-red-500/10 text-red-400 dark:border-red-500 dark:bg-red-950/40 dark:text-red-400 ring-1 ring-red-500/50 font-medium'
+                      : ''
+                  )
+                "
               />
             </TableCell>
             <TableCell class="text-right p-1.5">
-              <Button 
-                variant="ghost" 
-                size="icon" 
+              <Button
+                variant="ghost"
+                size="icon"
                 class="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
                 @click="removeFestivity(index)"
               >
@@ -141,16 +145,16 @@ function removeFestivity(index: number) {
       </Table>
     </div>
 
-    <!-- Add Row Form (Date optional) -->
     <div class="flex items-center gap-2 pt-1">
-      <Input 
-        v-model="newName" 
-        placeholder="Festivity Name (e.g. Pasqua)" 
+      <Input
+        v-model="newName"
+        placeholder="Festivity Name (e.g. Patron Saint)"
         class="h-8 text-xs flex-1 border-border/40"
         @keyup.enter="addFestivity"
       />
-      <DayMonthPicker 
-        v-model="newDate" 
+      <DayMonthPicker
+        v-model="newDate"
+        :year="activeYear"
         placeholder="gg/mm"
         class="w-36"
       />

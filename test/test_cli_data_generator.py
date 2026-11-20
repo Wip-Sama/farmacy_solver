@@ -1,8 +1,8 @@
-import unittest
 import os
 import sys
 import tempfile
-from unittest.mock import patch, MagicMock
+import unittest
+from unittest.mock import MagicMock, patch
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(SCRIPT_DIR, "..")))
@@ -161,7 +161,7 @@ class TestRunValidation(unittest.TestCase):
             prev_csv = f2.name
             f2.write("week,pharmacy\n1,1\n1,2\n")
         try:
-            result_code, result_detail = run_validation(temp_csv, prev_csv)
+            result_code, _result_detail = run_validation(temp_csv, prev_csv)
             self.assertEqual(result_code, "VALID")
             # Verify that --prev-year was passed to subprocess
             mock_run.assert_called_once()

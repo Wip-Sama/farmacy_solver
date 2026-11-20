@@ -1,16 +1,22 @@
-import sys
 import argparse
 import re
-import csv
-import os
-import logging
+import sys
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-def get_week_date(week_number, year=2025, first_day_of_week=0):
-    from core.runner_core import get_week_start_date
-    d_obj = get_week_start_date(week_number, year, first_day_of_week)
-    return d_obj.strftime("%Y-%m-%d")
+from core.csv_utils import generate_csv_report, parse_pharmacy_mapping
+from core.date_utils import get_week_date
+
+__all__ = [
+    "generate_csv_report",
+    "get_week_date",
+    "get_zona",
+    "parse_pharmacy_mapping",
+    "parse_schedule",
+    "print_optimization_cost",
+    "print_shift_statistics",
+    "print_weekly_schedule",
+]
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
@@ -79,12 +85,12 @@ def get_zona(f_id):
     return "Assegnata"
 
 
-def print_weekly_schedule(schedule, year=2025, festivo_schedule=None, festivities_dict=None, first_day_of_week=0):
+def print_weekly_schedule(schedule, year=2025, fest_schedule=None, festivities_dict=None, first_day_of_week=0):
     print("-" * 85)
     print(f"{'Settimana':<22} | {'Festività':<20} | {'Farmacie di Turno'}")
     print("-" * 85)
 
-    festivo_sched = festivo_schedule or {}
+    _fest_sched = fest_schedule or {}
     fest_dict = festivities_dict or {}
 
     for week in sorted(schedule.keys()):
@@ -124,7 +130,6 @@ def print_weekly_schedule(schedule, year=2025, festivo_schedule=None, festivitie
             print(f"{week_display:<22} | {fest_label:<20} | {', '.join(formatted_farmacie)}")
     print("-" * 85)
 
-from core.csv_utils import parse_pharmacy_mapping, generate_csv_report
 
 
 def print_shift_statistics(schedule):
@@ -165,7 +170,7 @@ def print_optimization_cost(asp_output):
 def main():
     args = parse_arguments()
     asp_output = read_input(args)
-    schedule, fest_schedule = parse_schedule(asp_output)
+    schedule, _fest_schedule = parse_schedule(asp_output)
     
     if not schedule:
         print("Nessun turno trovato nell'output. Verifica che il solver abbia trovato una soluzione valida.")

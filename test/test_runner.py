@@ -1,9 +1,11 @@
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import unittest
 import subprocess
+import unittest
+
 
 class TestRunner(unittest.TestCase):
     def test_help_argument_parsing(self):
@@ -11,9 +13,9 @@ class TestRunner(unittest.TestCase):
         runner_path = os.path.join(root_dir, 'cli', 'runner.py')
         result = subprocess.run(
             [sys.executable, runner_path, '--help'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
+            capture_output=True,
+            text=True,
+            check=True
         )
         self.assertIn('--opt', result.stdout)
         self.assertIn('--festivities', result.stdout)
@@ -26,16 +28,17 @@ class TestRunner(unittest.TestCase):
         runner_path = os.path.join(root_dir, 'cli', 'runner.py')
         result = subprocess.run(
             [sys.executable, runner_path, '--opt', 'invalid_opt'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
+            capture_output=True,
+            text=True,
+            check=True
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('invalid choice', result.stderr)
 
     def test_parse_week_param_now(self):
-        from core.runner_core import parse_week_param, get_week_number_for_date
         from datetime import date
+
+        from core.runner_core import get_week_number_for_date, parse_week_param
         today = date.today()
         expected_week = get_week_number_for_date(today, 2026, 'monday')
         parsed = parse_week_param('now', year=2026, first_day_of_week='monday')

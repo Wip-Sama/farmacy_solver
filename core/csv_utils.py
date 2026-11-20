@@ -1,27 +1,21 @@
 import csv
-import re
-import os
 import logging
+import os
+import re
 from collections import defaultdict
-from datetime import datetime, timedelta
 
-def parse_first_day_of_week(val) -> int:
-    """Normalizes day name or int into 0..6 (0=Monday, 5=Saturday, 6=Sunday)."""
-    if val is None:
-        return 0
-    if isinstance(val, int) and 0 <= val <= 6:
-        return val
-    s = str(val).strip().lower()
-    mapping = {
-        'monday': 0, 'mon': 0, 'lunedi': 0, 'lunedì': 0, '0': 0,
-        'tuesday': 1, 'tue': 1, 'martedi': 1, 'martedì': 1, '1': 1,
-        'wednesday': 2, 'wed': 2, 'mercoledi': 2, 'mercoledì': 2, '2': 2,
-        'thursday': 3, 'thu': 3, 'giovedi': 3, 'giovedì': 3, '3': 3,
-        'friday': 4, 'fri': 4, 'venerdi': 4, 'veneredì': 4, '4': 4,
-        'saturday': 5, 'sat': 5, 'sabato': 5, '5': 5,
-        'sunday': 6, 'sun': 6, 'domenica': 6, '6': 6,
-    }
-    return mapping.get(s, 0)
+from core.date_utils import get_days_in_week, get_week_date, parse_first_day_of_week
+
+__all__ = [
+    "extract_pharmacy_ids",
+    "generate_csv_report",
+    "get_days_in_week",
+    "get_week_date",
+    "parse_first_day_of_week",
+    "parse_metadata_line",
+    "parse_pharmacy_mapping",
+    "read_csv_schedule",
+]
 
 def parse_pharmacy_mapping(map_arg):
     """
@@ -200,28 +194,6 @@ def read_csv_schedule(csv_path: str):
     return schedule, metadata, pharmacy_map, past_festivities, raw_rows
 
 
-def get_days_in_week(week_number, year=2025, first_day_of_week=0):
-    """
-    Accurately calculates the exact dates belonging to a specific week.
-    Crucial for avoiding 7-day overflows in shortened Week 1 boundaries.
-    """
-    from core.runner_core import get_week_start_date
-    start_date = get_week_start_date(week_number, year, first_day_of_week)
-    
-    if week_number == 1:
-        next_week_start = get_week_start_date(2, year, first_day_of_week)
-        days = (next_week_start - start_date).days
-    else:
-        days = 7
-        
-    valid_dates = []
-    for i in range(days):
-        d = start_date + timedelta(days=i)
-        if d.year == year:
-            valid_dates.append(d)
-    return valid_dates
-
-
 def generate_csv_report(
     schedule,
     filename,
@@ -254,7 +226,7 @@ def generate_csv_report(
     if pharmacy_map:
         active_pharmacy_ids.update(pharmacy_map.keys())
         
-    sorted_f_ids = sorted(list(active_pharmacy_ids))
+    sorted_f_ids = sorted(active_pharmacy_ids)
     if not sorted_f_ids:
         sorted_f_ids = list(range(1, 11)) # Fallback di sicurezza estrema
 
@@ -384,11 +356,7 @@ def generate_csv_report(
                                 row.append(1 if i in f_assigned else "")
                             writer.writerow(row)
 
-        print(f"Report CSV generato con successo in: {filename}")
+        logging.info(f"CSV report generated successfully at: {filename}")
     except Exception as e:
-        print(f"Errore durante la generazione del report CSV: {e}")
-
-def get_week_date(week_number, year=2025, first_day_of_week=0):
-    from core.runner_core import get_week_start_date
-    d_obj = get_week_start_date(week_number, year, first_day_of_week)
-    return d_obj.strftime("%Y-%m-%d")
+        logging.error(f"Error generating CSV report: {e}")
+        raise

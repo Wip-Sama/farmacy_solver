@@ -1,13 +1,16 @@
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import unittest
-import tempfile
 import csv
+import tempfile
+import unittest
 from datetime import date
+
+from core.runner_core import parse_prev_year_csv
 from core.terminal_display import generate_csv_report, parse_pharmacy_mapping
-from core.runner_core import parse_prev_year_csv, generate_dynamic_constraints
+
 
 class TestCSVGeneration(unittest.TestCase):
     def setUp(self):

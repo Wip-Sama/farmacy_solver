@@ -66,7 +66,7 @@ def parse_validator_summary(output):
             if not stripped:
                 continue
             # Normalized error lines from validator start with "[ERROR]" or a dash
-            if stripped.startswith("[ERROR]") or stripped.startswith("-") or stripped.startswith("FAILURE:"):
+            if stripped.startswith(("[ERROR]", "-", "FAILURE:")):
                 details.append(stripped.lstrip("- ").replace("  [ERROR] ", "[ERROR] "))
             else:
                 details.append(stripped)
@@ -121,7 +121,7 @@ def run_validation(csv_path, prev_year_csv):
         cmd.extend(["--prev-year", prev_year_csv])
     
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
     except OSError as exc:
         return "UNCHECKED", f"Validator execution error: {exc}"
     
@@ -210,7 +210,7 @@ def execute_and_parse(task):
     
     print(f"  [STARTING] Profile: {profile} | Run: {run_type} | TL: {time_limit}s | Desc: {desc}")
     
-    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
     raw_output = strip_ansi(result.stdout)
     
     metrics = parse_run_metrics(raw_output)

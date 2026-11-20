@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useAppStore } from '@/stores/appStore'
-import type { PharmacyPreference } from '@/stores/appStore'
+import type { Pharmacy, PharmacyPreference } from '@/stores/appStore'
 import { Button } from '@/components/ui/button'
 import DayMonthPicker from '@/components/DayMonthPicker.vue'
 import {
@@ -23,6 +23,8 @@ import { Plus, Trash2 } from 'lucide-vue-next'
 
 const props = defineProps<{
   items?: PharmacyPreference[]
+  pharmacies?: Pharmacy[]
+  year?: number
 }>()
 
 const emit = defineEmits<{
@@ -35,6 +37,19 @@ const list = computed<PharmacyPreference[]>(() => {
   return props.items !== undefined ? props.items : store.settings.pharmacy_preferences
 })
 
+const pharmacyOptions = computed<Pharmacy[]>(() => {
+  const source = props.pharmacies ?? store.settings.pharmacies
+  return source.length > 0
+    ? source
+    : [
+        { id: 1, name: 'F1', location: 'centro' },
+        { id: 2, name: 'F2', location: 'centro' },
+        { id: 3, name: 'F3', location: 'centro' },
+      ]
+})
+
+const activeYear = computed<number>(() => props.year ?? store.settings.year)
+
 const newPharmacyId = ref('1')
 const newDate = ref('')
 const newState = ref('Closed')
@@ -43,7 +58,7 @@ const preferenceStateOptions = [
   'Closed',
   'Open',
   'Preferably Closed',
-  'Preferably Open'
+  'Preferably Open',
 ]
 
 function getPharmacyLabel(p: { id: number; name?: string }): string {
@@ -65,7 +80,7 @@ function addPreference() {
   if (!newDate.value) return
   const updated = [
     ...list.value,
-    { pharmacy_id: parseInt(newPharmacyId.value, 10), date: newDate.value, state: newState.value }
+    { pharmacy_id: parseInt(newPharmacyId.value, 10), date: newDate.value, state: newState.value },
   ]
   updateList(updated)
   newDate.value = ''
@@ -95,12 +110,10 @@ function removePreference(index: number) {
       <h3 class="text-sm font-semibold text-foreground">Preferences</h3>
     </div>
 
-    <!-- Explanation note from wireframe -->
-    <p class="text-xs text-muted-foreground italic leading-relaxed">
-      Imposta preferenze specifiche di apertura/chiusura per ogni farmacia.
+    <p class="text-xs text-muted-foreground leading-relaxed">
+      Set required or preferred open/closed dates for individual pharmacies.
     </p>
 
-    <!-- Table -->
     <div class="rounded-md border border-border/40 overflow-hidden">
       <Table>
         <TableHeader>
@@ -114,17 +127,17 @@ function removePreference(index: number) {
         <TableBody>
           <TableRow v-for="(pref, index) in list" :key="index" class="border-b border-border/40">
             <TableCell class="p-1.5">
-              <Select 
-                :model-value="pref.pharmacy_id.toString()" 
+              <Select
+                :model-value="pref.pharmacy_id.toString()"
                 @update:model-value="(val: any) => updatePreference(index, 'pharmacy_id', val)"
               >
                 <SelectTrigger class="h-8 text-xs font-bold text-primary w-32 border-border/40">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem 
-                    v-for="p in (store.settings.pharmacies.length > 0 ? store.settings.pharmacies : [{ id: 1 }, { id: 2 }, { id: 3 }])" 
-                    :key="p.id" 
+                  <SelectItem
+                    v-for="p in pharmacyOptions"
+                    :key="p.id"
                     :value="p.id.toString()"
                   >
                     {{ getPharmacyLabel(p) }}
@@ -133,15 +146,16 @@ function removePreference(index: number) {
               </Select>
             </TableCell>
             <TableCell class="p-1.5">
-              <DayMonthPicker 
-                :model-value="pref.date" 
+              <DayMonthPicker
+                :model-value="pref.date"
+                :year="activeYear"
                 @update:model-value="(val: string) => updatePreference(index, 'date', val)"
                 class="w-36"
               />
             </TableCell>
             <TableCell class="p-1.5">
-              <Select 
-                :model-value="pref.state" 
+              <Select
+                :model-value="pref.state"
                 @update:model-value="(val: any) => updatePreference(index, 'state', val)"
               >
                 <SelectTrigger class="h-8 text-xs w-40 font-medium text-amber-500 border-border/40">
@@ -155,9 +169,9 @@ function removePreference(index: number) {
               </Select>
             </TableCell>
             <TableCell class="text-right p-1.5">
-              <Button 
-                variant="ghost" 
-                size="icon" 
+              <Button
+                variant="ghost"
+                size="icon"
                 class="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
                 @click="removePreference(index)"
               >
@@ -174,16 +188,15 @@ function removePreference(index: number) {
       </Table>
     </div>
 
-    <!-- Add Row Form -->
     <div class="flex items-center gap-2 pt-1">
       <Select v-model="newPharmacyId">
         <SelectTrigger class="h-8 text-xs w-32 border-border/40">
           <SelectValue placeholder="Pharmacy" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem 
-            v-for="p in (store.settings.pharmacies.length > 0 ? store.settings.pharmacies : [{ id: 1 }, { id: 2 }, { id: 3 }])" 
-            :key="p.id" 
+          <SelectItem
+            v-for="p in pharmacyOptions"
+            :key="p.id"
             :value="p.id.toString()"
           >
             {{ getPharmacyLabel(p) }}
@@ -191,8 +204,9 @@ function removePreference(index: number) {
         </SelectContent>
       </Select>
 
-      <DayMonthPicker 
-        v-model="newDate" 
+      <DayMonthPicker
+        v-model="newDate"
+        :year="activeYear"
         placeholder="gg/mm"
         class="w-36"
       />

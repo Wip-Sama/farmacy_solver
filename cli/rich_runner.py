@@ -1,11 +1,12 @@
-import sys
-import os
 import ntpath
+import os
+import sys
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import time
 from datetime import date, datetime, timedelta
 from enum import Enum
-from typing import List, Optional, Annotated
+from typing import Annotated
 
 # Force utf-8 encoding on Windows to support rich progress spinners (which use braille unicode chars)
 if sys.platform == "win32":
@@ -15,22 +16,22 @@ if sys.platform == "win32":
 
 import typer
 from rich.console import Console, Group
+from rich.live import Live
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich.text import Text
-from rich.live import Live
 
 from core.config import ASP_DIR, SCHEDULES_DIR
+from core.csv_utils import generate_csv_report
 from core.runner_core import (
-    parse_festivities,
     generate_dynamic_constraints,
-    run_external_solver
+    parse_festivities,
+    run_external_solver,
 )
 from core.terminal_display import (
-    parse_schedule, 
-    get_zona,
     get_week_date,
-    generate_csv_report
+    get_zona,
+    parse_schedule,
 )
 
 app = typer.Typer(help="Rich runner for ASP pharmacy scheduling.")
@@ -60,7 +61,7 @@ class ClingoProfile(str, Enum):
     parallel4 = "parallel4"
     parallel4_usc = "parallel4_usc"
 
-def generate_output_tables(schedule, year, cost_value=None, elapsed_time=None, is_live=False, festivo_schedule=None, festivities_dict=None, pharmacies_list=None):
+def generate_output_tables(schedule, year, cost_value=None, elapsed_time=None, is_live=False, fest_schedule=None, festivities_dict=None, pharmacies_list=None):
     renderables = []
 
     ### Weekly Schedule Table
@@ -70,7 +71,7 @@ def generate_output_tables(schedule, year, cost_value=None, elapsed_time=None, i
     table.add_column("Festività", style="bold blue", width=20)
     table.add_column("Farmacie di Turno", style="bold green")
 
-    festivo_sched = festivo_schedule or {}
+    _fest_sched = fest_schedule or {}
     fest_dict = festivities_dict or {}
 
     for week in sorted(schedule.keys()):
@@ -233,26 +234,26 @@ def run_rich_clingo(domain_file, guess_file, constraints_file, opt_file, dynamic
 def main(
     base: Annotated[str, typer.Option(help="The base encoding to use")] = "choice",
     opt: Annotated[str, typer.Option(help="The optimization strategy to use")] = "penalita_esponenziale",
-    time_limit: Annotated[Optional[int], typer.Option(help="Time limit for the solver in seconds")] = None,
+    time_limit: Annotated[int | None, typer.Option(help="Time limit for the solver in seconds")] = None,
     live: Annotated[bool, typer.Option(help="Print live the latest found solution as it is discovered")] = False,
-    csv_file: Annotated[Optional[str], typer.Option("--csv", help="Generate a CSV report to the specified file")] = None,
+    csv_file: Annotated[str | None, typer.Option("--csv", help="Generate a CSV report to the specified file")] = None,
     csv_mode: Annotated[str, typer.Option(help="CSV mode: compact (full cols), normal, tiny (condensed col), extended")] = "normal",
     csv_direction: Annotated[str, typer.Option(help="CSV direction: column, row")] = "column",
-    csv_map_pharmacies: Annotated[Optional[str], typer.Option(help="Pharmacy name mapping (e.g. '1,BUCCARELLI;2,SANMICHELE')")] = None,
+    csv_map_pharmacies: Annotated[str | None, typer.Option(help="Pharmacy name mapping (e.g. '1,BUCCARELLI;2,SANMICHELE')")] = None,
     first_day_of_week: Annotated[str, typer.Option("--first-day-of-the-week", "--fdotw", help="First day of the week (monday, saturday, sunday, 0..6)")] = "monday",
-    reschedule_csv: Annotated[Optional[str], typer.Option(help="Path to the CSV file of a previous run")] = None,
-    reschedule_from: Annotated[Optional[str], typer.Option(help="Week number from which to reschedule (number or 'now')")] = None,
-    festivities: Annotated[Optional[List[str]], typer.Option(help="Custom festivities in format 'name,start_date,finish_date' or 'name,date'")] = None,
+    reschedule_csv: Annotated[str | None, typer.Option(help="Path to the CSV file of a previous run")] = None,
+    reschedule_from: Annotated[str | None, typer.Option(help="Week number from which to reschedule (number or 'now')")] = None,
+    festivities: Annotated[list[str] | None, typer.Option(help="Custom festivities in format 'name,start_date,finish_date' or 'name,date'")] = None,
     auto_festivities: Annotated[bool, typer.Option(help="Automatically generate Italian national festivities for the year")] = False,
-    prev_year: Annotated[Optional[str], typer.Option(help="Path to previous year's CSV schedule")] = None,
+    prev_year: Annotated[str | None, typer.Option(help="Path to previous year's CSV schedule")] = None,
     year: Annotated[int, typer.Option(help="L'anno per cui si vuole generare il calendario")] = 2025,
     start_week: Annotated[str, typer.Option(help="Settimana di inizio per la schedulazione (numero o 'now')")] = "1",
-    end_week: Annotated[Optional[str], typer.Option(help="Settimana di fine per la schedulazione (numero o 'now')")] = None,
-    pharmacies: Annotated[Optional[str], typer.Option(help="Elenco farmacie 'id,zona;...' o file .txt. Es: '1,centro; 2,marina'")] = None,
-    force_open: Annotated[Optional[List[str]], typer.Option(help="Forza l'apertura (Strong constraint). Singola, lista con ';' (es. '1,15; 2,16') o file")] = None,
-    force_closed: Annotated[Optional[List[str]], typer.Option(help="Forza la chiusura (Strong constraint). Singola, lista con ';' (es. '1,15') o file")] = None,
-    pref_open: Annotated[Optional[List[str]], typer.Option(help="Preferisce l'apertura (Weak constraint). Singola, lista con ';' (es. '1,15') o file")] = None,
-    pref_closed: Annotated[Optional[List[str]], typer.Option(help="Preferisce la chiusura (Weak constraint). Singola, lista con ';' (es. '1,15') o file")] = None,
+    end_week: Annotated[str | None, typer.Option(help="Settimana di fine per la schedulazione (numero o 'now')")] = None,
+    pharmacies: Annotated[str | None, typer.Option(help="Elenco farmacie 'id,zona;...' o file .txt. Es: '1,centro; 2,marina'")] = None,
+    force_open: Annotated[list[str] | None, typer.Option(help="Forza l'apertura (Strong constraint). Singola, lista con ';' (es. '1,15; 2,16') o file")] = None,
+    force_closed: Annotated[list[str] | None, typer.Option(help="Forza la chiusura (Strong constraint). Singola, lista con ';' (es. '1,15') o file")] = None,
+    pref_open: Annotated[list[str] | None, typer.Option(help="Preferisce l'apertura (Weak constraint). Singola, lista con ';' (es. '1,15') o file")] = None,
+    pref_closed: Annotated[list[str] | None, typer.Option(help="Preferisce la chiusura (Weak constraint). Singola, lista con ';' (es. '1,15') o file")] = None,
     solver: Annotated[SolverType, typer.Option(help="Solver to use")] = SolverType.clingo,
     clingo_profile: Annotated[ClingoProfile, typer.Option(help="Clingo operational profile")] = ClingoProfile.default
 ):
@@ -290,12 +291,11 @@ def main(
     final_end_week = parse_week_param(end_week, year, first_day_of_week) or total_weeks
     reschedule_from_num = parse_week_param(reschedule_from, year, first_day_of_week)
 
-    if reschedule_csv:
-        if reschedule_from_num is None:
-            if start_week_num > 1:
-                reschedule_from_num = start_week_num
-            else:
-                reschedule_from_num = 1
+    if reschedule_csv and reschedule_from_num is None:
+        if start_week_num > 1:
+            reschedule_from_num = start_week_num
+        else:
+            reschedule_from_num = 1
     
     if start_week_num > total_weeks:
         console.print(f"[red]Error: --start-week {start_week_num} is greater than the total number of weeks in year {year} ({total_weeks}).[/red]")
@@ -310,7 +310,7 @@ def main(
     if not pharmacies_str:
         pharmacies_str = ";".join([f"{i},{'marina' if i%2==0 else 'centro'}" for i in range(1, 11)])
 
-    if pharmacies_str and (os.path.isfile(pharmacies_str) or pharmacies_str.endswith(".txt") or pharmacies_str.endswith(".csv")):
+    if pharmacies_str and (os.path.isfile(pharmacies_str) or pharmacies_str.endswith((".txt", ".csv"))):
         try:
             with open(pharmacies_str, "r", encoding="utf-8") as f:
                 pharmacies_str = f.read().strip()
@@ -326,7 +326,7 @@ def main(
                 if p:
                     parts = p.split(',')
                     parsed_ids.append(int(parts[0].strip()))
-            pharmacies_list = sorted(list(set(parsed_ids)))
+            pharmacies_list = sorted(set(parsed_ids))
         except Exception:
             pass # In caso di errori strani lascerà None, il fallback farà range(1, 11)
 

@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import { useAppStore } from '@/stores/appStore'
+import type { CustomFestivity, Pharmacy } from '@/stores/appStore'
 import {
   Dialog,
   DialogContent,
@@ -26,19 +28,53 @@ import { Settings, ChevronUp, ChevronDown, Save } from 'lucide-vue-next'
 const store = useAppStore()
 const daysOfWeek = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 
+const draftUsePreviousYear = ref(store.settings.use_previous_year)
+const draftFirstDayOfWeek = ref(store.settings.first_day_of_week)
+const draftAutoFestivities = ref(store.settings.auto_festivities)
+const draftTimeLimit = ref(store.settings.time_limit)
+const draftPharmacies = ref<Pharmacy[]>([])
+const draftFestivities = ref<CustomFestivity[]>([])
+
+watch(
+  () => store.isSettingsOpen,
+  (isOpen) => {
+    if (isOpen) {
+      draftUsePreviousYear.value = store.settings.use_previous_year
+      draftFirstDayOfWeek.value = store.settings.first_day_of_week
+      draftAutoFestivities.value = store.settings.auto_festivities
+      draftTimeLimit.value = store.settings.time_limit
+      draftPharmacies.value = JSON.parse(JSON.stringify(store.settings.pharmacies))
+      draftFestivities.value = JSON.parse(JSON.stringify(store.settings.custom_festivities))
+    }
+  },
+  { immediate: true }
+)
+
 function incrementTimeLimit() {
-  store.updateSettings({ time_limit: store.settings.time_limit + 10 })
+  draftTimeLimit.value += 10
 }
 
 function decrementTimeLimit() {
-  if (store.settings.time_limit > 10) {
-    store.updateSettings({ time_limit: store.settings.time_limit - 10 })
+  if (draftTimeLimit.value > 10) {
+    draftTimeLimit.value -= 10
   }
 }
 
 async function handleSaveSettings() {
-  await store.saveCurrentSettings()
-  store.isSettingsOpen = false
+  const ok = await store.updateSettings(
+    {
+      use_previous_year: draftUsePreviousYear.value,
+      first_day_of_week: draftFirstDayOfWeek.value,
+      auto_festivities: draftAutoFestivities.value,
+      time_limit: draftTimeLimit.value,
+      pharmacies: draftPharmacies.value,
+      custom_festivities: draftFestivities.value,
+    },
+    true
+  )
+  if (ok) {
+    store.isSettingsOpen = false
+  }
 }
 </script>
 
@@ -54,37 +90,35 @@ async function handleSaveSettings() {
 
       <Separator class="bg-border/30" />
 
-      <ScrollArea class="flex-1 p-6 space-y-8 overflow-y-auto">
-        <!-- Festivities Section -->
-        <FestivitiesTable />
+      <ScrollArea class="flex-1 p-6 space-y-6 overflow-y-auto">
+        <FestivitiesTable
+          v-model:items="draftFestivities"
+          :auto-festivities="draftAutoFestivities"
+        />
 
-        <!-- Space replacing middle separator -->
-        <div class="h-4"></div>
+        <div class="h-4" />
 
-        <!-- Pharmacies Section -->
-        <PharmaciesTable />
+        <PharmaciesTable v-model:items="draftPharmacies" />
 
-        <!-- Space replacing middle separator -->
-        <div class="h-4"></div>
+        <div class="h-4" />
 
-        <!-- Settings Options Grid -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Use Previous Year Switch -->
           <div class="flex items-center justify-between p-3 rounded-lg border border-border/40 bg-card">
-            <Label for="settings-use-prev-year" class="text-xs font-medium cursor-pointer">Use previous year</Label>
+            <Label for="settings-use-prev-year" class="text-xs font-medium cursor-pointer">
+              Use previous year
+            </Label>
             <Switch
               id="settings-use-prev-year"
-              :model-value="store.settings.use_previous_year"
-              @update:model-value="(val: boolean) => store.updateSettings({ use_previous_year: val })"
+              :model-value="draftUsePreviousYear"
+              @update:model-value="(val: boolean) => (draftUsePreviousYear = val)"
             />
           </div>
 
-          <!-- First Day of Week -->
           <div class="flex items-center justify-between p-3 rounded-lg border border-border/40 bg-card">
             <Label class="text-xs font-medium">First day of week</Label>
-            <Select 
-              :model-value="store.settings.first_day_of_week"
-              @update:model-value="(val: any) => store.updateSettings({ first_day_of_week: String(val) })"
+            <Select
+              :model-value="draftFirstDayOfWeek"
+              @update:model-value="(val: any) => (draftFirstDayOfWeek = String(val))"
             >
               <SelectTrigger class="h-8 text-xs w-32 capitalize">
                 <SelectValue />
@@ -97,21 +131,21 @@ async function handleSaveSettings() {
             </Select>
           </div>
 
-          <!-- Auto Festivities Switch -->
           <div class="flex items-center justify-between p-3 rounded-lg border border-border/40 bg-card">
-            <Label for="settings-auto-fest" class="text-xs font-medium cursor-pointer">Auto festivities</Label>
+            <Label for="settings-auto-fest" class="text-xs font-medium cursor-pointer">
+              Auto festivities
+            </Label>
             <Switch
               id="settings-auto-fest"
-              :model-value="store.settings.auto_festivities"
-              @update:model-value="(val: boolean) => store.updateSettings({ auto_festivities: val })"
+              :model-value="draftAutoFestivities"
+              @update:model-value="(val: boolean) => (draftAutoFestivities = val)"
             />
           </div>
 
-          <!-- Time Limit -->
           <div class="flex items-center justify-between p-3 rounded-lg border border-border/40 bg-card">
-            <Label class="text-xs font-medium">Time Limit</Label>
+            <Label class="text-xs font-medium">Calculation Time Limit (sec)</Label>
             <div class="flex items-center space-x-2">
-              <span class="font-bold text-sm text-primary font-mono">{{ store.settings.time_limit }}</span>
+              <span class="font-bold text-sm text-primary font-mono">{{ draftTimeLimit }}</span>
               <div class="flex flex-col gap-0.5">
                 <Button variant="ghost" size="icon" class="h-5 w-5" @click="incrementTimeLimit">
                   <ChevronUp class="h-3 w-3" />
@@ -131,7 +165,11 @@ async function handleSaveSettings() {
         <Button variant="outline" size="sm" @click="store.isSettingsOpen = false">
           Cancel
         </Button>
-        <Button size="sm" class="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" @click="handleSaveSettings">
+        <Button
+          size="sm"
+          class="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+          @click="handleSaveSettings"
+        >
           <Save class="h-4 w-4" />
           Save Settings
         </Button>
